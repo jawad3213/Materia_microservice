@@ -29,6 +29,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DataOwnershipTest {
 
     private static final Path MAIN = Paths.get("src/main/java/com/materia/backend");
+    /** The shared kernel, a sibling module of this one. */
+    private static final Path COMMON = Paths.get("../materia-common/src/main/java/com/materia/backend");
     private static final Pattern CONTEXT = Pattern.compile("contexts[/\\\\]([^/\\\\]+)[/\\\\]");
     private static final Pattern TABLE = Pattern.compile("@Table\\(\\s*name\\s*=\\s*\"([a-z_]+)\"");
     /** A Java string literal; possessive, so a long literal cannot overflow the regex engine's stack. */
@@ -43,7 +45,7 @@ class DataOwnershipTest {
     void contextsQueryOnlyTheirOwnData() throws IOException {
         List<Owned> owned = ownedNames();
         List<String> violations = new ArrayList<>();
-        try (Stream<Path> files = Files.walk(MAIN)) {
+        try (Stream<Path> files = Stream.concat(Files.walk(MAIN), Files.walk(COMMON))) {
             for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
                 String path = file.toString().replace('\\', '/');
                 if (path.contains("/infrastructure/seed/")) continue;
@@ -56,7 +58,7 @@ class DataOwnershipTest {
                     for (Owned name : owned) {
                         if (!name.context().equals(here)
                                 && Pattern.compile("\\b" + Pattern.quote(name.name()) + "\\b").matcher(text).find()) {
-                            violations.add(MAIN.relativize(file) + " uses " + name.name() + " of " + name.context()
+                            violations.add(file.normalize() + " uses " + name.name() + " of " + name.context()
                                     + ": \"" + text.strip() + "\"");
                         }
                     }

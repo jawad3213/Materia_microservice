@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+// Served by Identity. Mirrors auth's UserDirectoryUseCase.
+package materia.identity.v1;
+
+option java_package = "com.materia.proto.identity.v1";
+option java_multiple_files = true;
+
+// Who an account is, without its credentials. Callers: procurement (requesters, assignable receivers) and finance
+// (display names).
+service UserDirectory {
+  rpc FindUser(FindUserRequest) returns (FindUserResponse);
+  rpc FindUsersWithRole(FindUsersWithRoleRequest) returns (FindUsersWithRoleResponse);
+}
+
+message FindUserRequest {
+  // UUID
+  string user_id = 1;
+}
+
+message FindUserResponse {
+  // Absent when no account has this id.
+  optional UserSummary user = 1;
+}
+
+message FindUsersWithRoleRequest {
+  // e.g. "RECEIVER"
+  string role_code = 1;
+}
+
+message FindUsersWithRoleResponse {
+  repeated UserSummary users = 1;
+}
+
+// auth's UserSummary
+message UserSummary {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  string role_code = 4;
+  bool enabled = 5;
+  // e.g. "ACTIVE"; absent when the account has no status
+  optional string status_code = 6;
+}

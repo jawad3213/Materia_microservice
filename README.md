@@ -429,7 +429,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #### 1. Démarrer le Backend :
 ```bash
 cd backend
-./mvnw clean spring-boot:run
+./mvnw -pl monolith -am spring-boot:run
 ```
 *Le serveur backend démarre sur le port `8080`.*
 

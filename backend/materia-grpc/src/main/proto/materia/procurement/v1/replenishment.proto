@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+// Served by Procurement. The query half of purchaseRequisition's ReplenishmentUseCase; raising a replenishment
+// requisition is a write and travels as an event.
+package materia.procurement.v1;
+
+option java_package = "com.materia.proto.procurement.v1";
+option java_multiple_files = true;
+
+// Callers: master data (reorder checks, so a material is not reordered twice).
+service Replenishment {
+  rpc HasOpenRequisitionFor(HasOpenRequisitionForRequest) returns (HasOpenRequisitionForResponse);
+}
+
+message HasOpenRequisitionForRequest {
+  // UUID; when absent the code is used
+  optional string material_id = 1;
+  optional string material_code = 2;
+}
+
+message HasOpenRequisitionForResponse {
+  bool open = 1;
+}

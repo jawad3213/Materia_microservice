@@ -134,7 +134,7 @@ cd backend && ./mvnw checkstyle:check
 cd frontend && npm run typecheck && npm run lint:ci
 cd backend && ./mvnw test -Dtest='!*IT' -Dsurefire.failIfNoSpecifiedTests=false -Djacoco.destFile=target/jacoco-unit.exec
 cd backend && ./mvnw test -Dtest='*IT' -Dsurefire.failIfNoSpecifiedTests=false -Djacoco.destFile=target/jacoco-it.exec
-cd backend && ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:check@check
+cd backend && ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:report-aggregate@aggregate jacoco:check@check
 
 # CD tests, against a running stack (BASE_URL without a trailing /)
 k6 run -e BASE_URL=http://localhost -e TEST_EMAIL=... -e TEST_PASSWORD=... tests/performance/load-test.js

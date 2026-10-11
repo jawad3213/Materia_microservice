@@ -101,7 +101,7 @@ report_images() {
 
 [ -f .bootstrapped ] || { log "Host bootstrap has not finished yet"; exit 1; }
 
-# Attachment files: owned by the backend container user (uid 10001, see backend/Dockerfile)
+# Attachment files: owned by the backend container user (uid 10001, see backend/monolith/Dockerfile)
 install -d -m 750 -o 10001 -g 10001 /data/attachments
 # Monitoring data, owned by the users the images run as (Prometheus: nobody, Grafana: 472)
 install -d -m 750 -o 65534 -g 65534 /data/prometheus

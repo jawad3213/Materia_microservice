@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+// Served by Procurement. Mirrors goodsReceipt's GoodsReceiptLookupUseCase.
+package materia.procurement.v1;
+
+import "materia/common/v1/types.proto";
+
+option java_package = "com.materia.proto.procurement.v1";
+option java_multiple_files = true;
+
+// Receipt lookups. Callers: finance (three-way match).
+service GoodsReceiptLookup {
+  rpc FindReceipt(FindReceiptRequest) returns (FindReceiptResponse);
+  rpc FindReceiptsForOrder(FindReceiptsForOrderRequest) returns (FindReceiptsForOrderResponse);
+}
+
+message FindReceiptRequest {
+  // UUID
+  string goods_receipt_id = 1;
+}
+
+message FindReceiptResponse {
+  // Absent when no receipt has this id.
+  optional GoodsReceiptView receipt = 1;
+}
+
+message FindReceiptsForOrderRequest {
+  string purchase_order_id = 1;
+}
+
+message FindReceiptsForOrderResponse {
+  repeated GoodsReceiptView receipts = 1;
+}
+
+// goodsReceipt's GoodsReceiptView
+message GoodsReceiptView {
+  string id = 1;
+  string receipt_code = 2;
+  string status = 3;
+  bool validated = 4;
+  optional string purchase_order_id = 5;
+  optional string purchase_order_code = 6;
+  optional string supplier_id = 7;
+  optional string supplier_name = 8;
+  repeated Line lines = 9;
+
+  message Line {
+    string id = 1;
+    optional string purchase_order_line_id = 2;
+    optional string material_id = 3;
+    optional string material_code = 4;
+    optional string material_name = 5;
+    optional string unit_of_measure = 6;
+    optional materia.common.v1.Money unit_price = 7;
+    optional int32 quantity_received = 8;
+    optional int32 quantity_accepted = 9;
+    optional int32 quantity_rejected = 10;
+    optional string rejection_reason = 11;
+    optional string quality_notes = 12;
+  }
+}

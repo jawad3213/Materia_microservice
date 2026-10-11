@@ -52,7 +52,7 @@ services:
   # -----------------------------------------------------------------
   backend:
     build:
-      context: ./backend
+      context: ./backend/monolith
       dockerfile: Dockerfile
     container_name: materia-backend
     environment:

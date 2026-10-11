@@ -182,9 +182,9 @@ jobs:
           name: unit-coverage
           retention-days: 3
           path: |
-            backend/target/classes
-            backend/target/test-classes
-            backend/target/jacoco-unit.exec
+            backend/*/target/classes
+            backend/*/target/test-classes
+            backend/*/target/jacoco-unit.exec
             frontend/coverage/lcov.info
 
       - name: Upload unit test reports
@@ -193,7 +193,7 @@ jobs:
         with:
           name: unit-test-reports
           retention-days: 14
-          path: backend/target/surefire-reports/
+          path: backend/*/target/surefire-reports/
 
   # ------------------------------------------------------------------------------------------
   # 4. Integration tests (backend *IT against PostgreSQL in Docker, via Testcontainers)
@@ -229,7 +229,7 @@ jobs:
         with:
           name: integration-coverage
           retention-days: 3
-          path: backend/target/jacoco-it.exec
+          path: backend/monolith/target/jacoco-it.exec
 
       - name: Upload integration test reports
         if: always()
@@ -237,7 +237,7 @@ jobs:
         with:
           name: integration-test-reports
           retention-days: 14
-          path: backend/target/surefire-reports/
+          path: backend/*/target/surefire-reports/
 
   # ------------------------------------------------------------------------------------------
   # 5. SonarQube: coverage gate (JaCoCo, unit + integration) and code analysis with its quality gate
@@ -265,20 +265,23 @@ jobs:
       - name: Get compiled classes and unit-test coverage
         uses: actions/download-artifact@v4
         with:
-          name: unit-coverage # backend/target/... and frontend/coverage/..., relative to the repository root
+          name: unit-coverage # backend/*/target/... and frontend/coverage/..., relative to the repository root
 
       - name: Get integration-test coverage
         uses: actions/download-artifact@v4
         with:
           name: integration-coverage
-          path: backend/target
+          path: backend/monolith/target
 
       - name: Coverage gate (80% of branches, unit + integration tests)
         working-directory: backend
         run: |
           chmod +x mvnw
-          ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:check@check
-          ./mvnw -q dependency:copy-dependencies -DoutputDirectory=target/dependency -DincludeScope=compile
+          ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:report-aggregate@aggregate jacoco:check@check
+          # Libraries Sonar resolves the bytecode against. In the same run as `package`, so the monolith finds the
+          # shared modules of this build; it recompiles the same sources after the coverage reports were written.
+          ./mvnw -q package dependency:copy-dependencies -DskipTests -Djacoco.skip=true \
+            -DoutputDirectory=target/dependency -DincludeScope=compile
 
       - name: SonarQube analysis
         if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
@@ -328,7 +331,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: vuln
-          skip-dirs: frontend/node_modules,backend/target
+          skip-dirs: frontend/node_modules,backend/materia-common/target,backend/materia-grpc/target,backend/monolith/target
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           trivyignores: .trivyignore
@@ -342,7 +345,7 @@ jobs:
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
-          scan-ref: backend/target
+          scan-ref: backend/monolith/target
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -355,7 +358,7 @@ jobs:
         with:
           name: backend-jar
           retention-days: 3
-          path: backend/target/*.jar
+          path: backend/monolith/target/*.jar
 
   # ------------------------------------------------------------------------------------------
   # 7. Build images (and scan them, OS packages included)
@@ -374,10 +377,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: backend-jar
-          path: backend/target
+          path: backend/monolith/target
 
       - name: Build backend image
-        run: docker build --pull -t "$PROJECT-backend:$IMAGE_TAG" backend/
+        run: docker build --pull -t "$PROJECT-backend:$IMAGE_TAG" backend/monolith/
 
       - name: Build frontend image
         # nginx in the frontend image proxies /api to the backend, so the API is same-origin.

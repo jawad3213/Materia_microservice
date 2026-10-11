@@ -28,6 +28,46 @@ tables. The shared code names no context's table; each context plugs its own dat
 | FX valuation | A `SqlDocumentFxStore` per document type it owns (its table, amount and date). |
 | User names | `UserDisplayNames`, provided by identity (`AuthUserDisplayNames`). |
 
+## Modules (`backend/`)
+
+`backend/pom.xml` is the parent of every module. Build and test everything from `backend/` with `./mvnw test`; run
+the application with `./mvnw -pl monolith -am spring-boot:run`.
+
+| Module | Holds | Depends on |
+|---|---|---|
+| `materia-common` | The shared kernel above (`com.materia.backend.common`). | Spring, JPA, Kafka |
+| `materia-grpc` | The contracts between services (`src/main/proto/materia/<service>/v1`), the stubs generated from them (`com.materia.proto.*`), and the interceptors every service installs (`com.materia.grpc.*`). | `materia-common`, grpc-java |
+| `monolith` | Every context and the gateway: today's deployable. Services leave it one at a time; what remains becomes the procurement service. | `materia-common` (and `materia-grpc` once gRPC is wired) |
+
+### gRPC contracts
+
+Each contract mirrors a public lookup use case and its view, field for field. Only reads cross services by gRPC;
+a change in another service (stock, replenishment requisitions) travels as an event.
+
+| Contract (server) | Mirrors | Callers |
+|---|---|---|
+| `identity.v1.UserDirectory` | `UserDirectoryUseCase` (`findUser`, `findUsersWithRole`) | procurement, finance |
+| `masterdata.v1.MaterialCatalog` | the reads of `MaterialInventoryUseCase` | procurement |
+| `procurement.v1.PurchaseOrderLookup` | `PurchaseOrderLookupUseCase` | finance |
+| `procurement.v1.GoodsReceiptLookup` | `GoodsReceiptLookupUseCase` | finance |
+| `procurement.v1.Replenishment` | `ReplenishmentUseCase.hasOpenRequisitionFor` | master data |
+
+Conventions: ids are UUID strings, amounts are `common.v1.Money` (a decimal string and a currency), dates are ISO
+strings, and a lookup that finds nothing returns an empty `optional` field. A field number is never reused; a
+breaking change is a new package version (`v2`).
+
+Interceptors every service installs (`materia-grpc`):
+
+| Side | Interceptor | Does |
+|---|---|---|
+| Client | `CallerTokenClientInterceptor` | Sends the user's token, so the called service applies that user's rights. |
+| Client | `TraceIdClientInterceptor` | Sends the trace id of the request being served. |
+| Client | `DefaultDeadlineClientInterceptor` | Gives a call without a deadline a default one. |
+| Server | `AuthenticationServerInterceptor` | Refuses a call without a valid token (`UNAUTHENTICATED`) and exposes the caller (`GrpcCaller`). |
+| Server | `TraceIdServerInterceptor` | Logs the call under the caller's trace id. |
+| Server | `ExceptionTranslatingServerInterceptor` | Turns the shared exceptions into status codes; `GrpcErrors.toException` turns them back on the client. |
+
+
 ## Rules
 
 1. **A context's `domain` and `application` layers know no other context and no gateway.** They reach the
@@ -113,3 +153,9 @@ raises replenishment requisitions in procurement (one direction). No transaction
   services and their tests do not change.
 - `RequisitionOutput.getLines()` still exposes requisition entities to the requisition web layer; other
   contexts must use `getLineSummaries()`.
+- **Writes that still cross services synchronously.** Returned goods go back on order through
+  `MaterialInventoryUseCase.addStockOnOrder` (`ProcurementReturnSources`), and master data raises replenishment
+  requisitions through `ReplenishmentUseCase.raise*`. Both become events before their services are split.
+- **The dashboard's metrics** have no gRPC contract yet: about thirty fine-grained calls, which an event-fed read
+  model in analytics may replace. Decided when analytics is extracted.
+- **Dev seeders** call other contexts directly; each service will seed its own data.

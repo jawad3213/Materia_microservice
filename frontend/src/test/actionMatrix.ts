@@ -5,10 +5,10 @@
  * other (SC-002a). This is the single import site; if the file moves, change MATRIX_PATH's import.
  * Only tests import this module, and production builds (`vite build`) never reach it.
  */
-import matrixJson from "../../../backend/src/test/resources/contracts/purchase-order-actions.json";
+import matrixJson from "../../../backend/monolith/src/test/resources/contracts/purchase-order-actions.json";
 
 /** Kept for error messages; the import above must use the same path. */
-export const MATRIX_PATH = "backend/src/test/resources/contracts/purchase-order-actions.json";
+export const MATRIX_PATH = "backend/monolith/src/test/resources/contracts/purchase-order-actions.json";
 
 export type Aggregate = "purchaseOrder" | "goodsReceipt";
 export type MatrixRole = "ADMIN" | "PURCHASER" | "RECEIVER";

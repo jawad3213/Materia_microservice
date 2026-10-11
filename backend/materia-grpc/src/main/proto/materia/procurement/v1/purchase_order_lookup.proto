@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+// Served by Procurement. Mirrors purchaseOrder's PurchaseOrderLookupUseCase.
+package materia.procurement.v1;
+
+import "materia/common/v1/types.proto";
+
+option java_package = "com.materia.proto.procurement.v1";
+option java_multiple_files = true;
+
+// Order lookups. Callers: finance (three-way match).
+service PurchaseOrderLookup {
+  rpc FindOrder(FindOrderRequest) returns (FindOrderResponse);
+}
+
+message FindOrderRequest {
+  // UUID
+  string purchase_order_id = 1;
+}
+
+message FindOrderResponse {
+  // Absent when no order has this id.
+  optional PurchaseOrderView order = 1;
+}
+
+// purchaseOrder's PurchaseOrderView
+message PurchaseOrderView {
+  string id = 1;
+  string order_code = 2;
+  string status = 3;
+  bool receivable = 4;
+  bool goods_received = 5;
+  optional string supplier_id = 6;
+  optional string supplier_code = 7;
+  optional string supplier_name = 8;
+  optional string currency_code = 9;
+  optional string assigned_to = 10;
+  optional string assigned_to_name = 11;
+  // ISO date, e.g. "2026-10-31"
+  optional string expected_delivery_date = 12;
+  optional string requisition_id = 13;
+  repeated Line lines = 14;
+
+  message Line {
+    string id = 1;
+    optional int32 line_number = 2;
+    optional string material_id = 3;
+    optional string material_code = 4;
+    optional string material_name = 5;
+    optional string unit_of_measure = 6;
+    optional materia.common.v1.Money unit_price = 7;
+    optional int32 quantity = 8;
+    optional string requisition_line_id = 9;
+    // Decimal string, e.g. "20"
+    optional string tax_rate = 10;
+  }
+}
