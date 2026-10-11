@@ -4,6 +4,9 @@ import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.auth.application.services.UserDirectoryService;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.contexts.auth.infrastructure.adapters.in.grpc.UserDirectoryGrpcService;
+import com.materia.backend.support.fixtures.InProcessGrpc;
+import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.out.ReceiverDirectory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,7 +38,8 @@ class AuthReceiverDirectoryTest {
 
     @BeforeEach
     void setUp() {
-        directory = new AuthReceiverDirectory(new UserDirectoryService(users));
+        directory = new AuthReceiverDirectory(UserDirectoryGrpc.newBlockingStub(
+                InProcessGrpc.serving(new UserDirectoryGrpcService(new UserDirectoryService(users)))));
     }
 
     @Test

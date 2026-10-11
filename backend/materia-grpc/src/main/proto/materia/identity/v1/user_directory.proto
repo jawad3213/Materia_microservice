@@ -35,9 +35,9 @@ message FindUsersWithRoleResponse {
 // auth's UserSummary
 message UserSummary {
   string id = 1;
-  string email = 2;
-  string display_name = 3;
-  string role_code = 4;
+  optional string email = 2;
+  optional string display_name = 3;
+  optional string role_code = 4;
   bool enabled = 5;
   // e.g. "ACTIVE"; absent when the account has no status
   optional string status_code = 6;

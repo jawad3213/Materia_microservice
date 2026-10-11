@@ -7,7 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import com.materia.backend.gateway.security.BearerTokenAuthentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -62,14 +62,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = extractTokenFromRequest(request);
 
         if (StringUtils.hasText(token)) {
-            if (jwtTokenProvider.validateAccessToken(token)) {
+            if (jwtTokenProvider.validateAccessToken(token) && jwtTokenProvider.isServiceToken(token)) {
+                // Service tokens travel between services only; a client never acts as one.
+                log.warn("Gateway: refused a service token on [{}]", request.getRequestURI());
+            } else if (jwtTokenProvider.validateAccessToken(token)) {
                 try {
                     // Extract identity directly from JWT claims — NO database call
                     UUID userId = jwtTokenProvider.getUserIdFromAccessToken(token);
                     List<GrantedAuthority> authorities = jwtTokenProvider.getAuthoritiesFromAccessToken(token);
 
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(userId, null, authorities);
+                    // The token is kept, so calls to other services carry the user's own token.
+                    BearerTokenAuthentication authentication =
+                            new BearerTokenAuthentication(userId, token, authorities);
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);

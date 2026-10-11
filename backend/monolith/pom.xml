@@ -25,6 +25,19 @@
             <artifactId>materia-common</artifactId>
         </dependency>
 
+        <!--
+          The contracts between the future services. Inside this application they travel over the in-process
+          transport (GrpcConfig); a network transport comes with the first extracted service.
+        -->
+        <dependency>
+            <groupId>com.materia</groupId>
+            <artifactId>materia-grpc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-inprocess</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starter Data JPA -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -150,12 +163,6 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- The gRPC contracts, so GrpcContractsTest holds them to the use cases they mirror (tests only for now) -->
-        <dependency>
-            <groupId>com.materia</groupId>
-            <artifactId>materia-grpc</artifactId>
-            <scope>test</scope>
-        </dependency>
 
         <!-- ArchUnit: keeps the bounded contexts separable (ModuleBoundariesTest) -->
         <dependency>

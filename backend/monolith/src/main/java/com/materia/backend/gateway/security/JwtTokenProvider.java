@@ -31,6 +31,10 @@ import java.util.stream.Collectors;
 @Component
 public class JwtTokenProvider {
 
+    public static final String SERVICE_ROLE = "ROLE_SERVICE";
+    private static final String SERVICE_SUBJECT_PREFIX = "service:";
+    private static final String SERVICE_CLAIM = "svc";
+
     private final RSAPrivateKey signingKey;
     private final RSAPublicKey verificationKey;
     private final String keyId;
@@ -91,6 +95,41 @@ public class JwtTokenProvider {
 
     public UUID getUserIdFromAccessToken(String token) {
         return UUID.fromString(parseClaims(token).getSubject());
+    }
+
+    /** The token's subject: a user UUID, or {@code service:<name>} for a service token. */
+    public String getSubjectFromAccessToken(String token) {
+        return parseClaims(token).getSubject();
+    }
+
+    /**
+     * A token for work no user started (scheduled jobs, event handlers, start-up), so its calls to other services
+     * are still authenticated. Its subject is {@code service:<name>}, not a user, and the HTTP API refuses it
+     * ({@link #isServiceToken}): it only travels between services.
+     */
+    public String generateServiceToken(String service) {
+        if (signingKey == null) {
+            throw new IllegalStateException("jwt.private-key is not set: this service only verifies tokens");
+        }
+        return Jwts.builder()
+                .header().keyId(keyId).and()
+                .id(UUID.randomUUID().toString())
+                .subject(SERVICE_SUBJECT_PREFIX + service)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + accessExpirationMs))
+                .claim(SERVICE_CLAIM, true)
+                .claim("roles", SERVICE_ROLE)
+                .signWith(signingKey, Jwts.SIG.RS256)
+                .compact();
+    }
+
+    public boolean isServiceToken(String token) {
+        return Boolean.TRUE.equals(parseClaims(token).get(SERVICE_CLAIM, Boolean.class));
+    }
+
+    /** How long an access token issued now stays valid. */
+    public long accessExpirationMs() {
+        return accessExpirationMs;
     }
 
     public String getEmailFromAccessToken(String token) {

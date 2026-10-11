@@ -8,7 +8,13 @@ import com.materia.backend.contexts.goodsReceipt.infrastructure.adapters.out.pur
 import com.materia.backend.contexts.goodsReceipt.infrastructure.adapters.out.stock.MaterialReceivedStock;
 import com.materia.backend.contexts.invoice.domain.ports.out.InvoicedOrders;
 import com.materia.backend.contexts.invoice.infrastructure.adapters.out.procurement.ProcurementInvoicedOrders;
+import com.materia.backend.contexts.goodsReceipt.infrastructure.adapters.in.grpc.GoodsReceiptLookupGrpcService;
 import com.materia.backend.contexts.masterData.application.services.MaterialInventoryService;
+import com.materia.backend.contexts.masterData.infrastructure.adapters.in.grpc.MaterialCatalogGrpcService;
+import com.materia.backend.contexts.purchaseOrder.infrastructure.adapters.in.grpc.PurchaseOrderLookupGrpcService;
+import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
+import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
+import com.materia.proto.procurement.v1.PurchaseOrderLookupGrpc;
 import com.materia.backend.contexts.masterData.domain.entities.Material;
 import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
 import com.materia.backend.contexts.purchaseOrder.application.services.PurchaseOrderLookupService;
@@ -27,7 +33,8 @@ import com.materia.backend.contexts.returnToVendor.infrastructure.adapters.out.p
 /**
  * Wires a context's outbound port to the real adapter and the real public use case of the context it calls, over
  * that context's (usually mocked) repositories. Tests keep stubbing the repositories they always did while the
- * production code only sees its own port.
+ * production code only sees its own port. A call to another service goes through its gRPC contract, in process
+ * ({@link InProcessGrpc}), as in the application.
  */
 public final class CrossContextWiring {
 
@@ -36,12 +43,13 @@ public final class CrossContextWiring {
 
     /** The requisition context's view of the materials held by {@code materials}. */
     public static MaterialCatalog materialCatalogOver(MaterialRepository materials) {
-        return new MasterDataMaterialCatalog(new MaterialInventoryService(materials));
+        return new MasterDataMaterialCatalog(materialStub(new MaterialInventoryService(materials)));
     }
 
     /** What a requisition line records of {@code material}. */
     public static MaterialSnapshot snapshotOf(Material material) {
-        return MasterDataMaterialCatalog.toSnapshot(MaterialInventoryService.toReference(material));
+        return MasterDataMaterialCatalog.toSnapshot(
+                MaterialCatalogGrpcService.toProto(MaterialInventoryService.toReference(material)));
     }
 
     /** The goods receipt context's view of the purchase orders held by {@code orders}. */
@@ -63,12 +71,16 @@ public final class CrossContextWiring {
         MaterialInventoryService inventory = new MaterialInventoryService(materials);
         events.add(new com.materia.backend.contexts.masterData.infrastructure.adapters.in.events.ReceivedGoodsStockHandler(
                 inventory, events));
-        return new MaterialReceivedStock(inventory, events);
+        return new MaterialReceivedStock(materialStub(inventory), events);
     }
 
     /** The invoice context's view of the orders in {@code orders} and the receipts in {@code receipts}. */
     public static InvoicedOrders invoicedOrdersOver(PurchaseOrderRepository orders, GoodsReceiptRepository receipts) {
-        return new ProcurementInvoicedOrders(new PurchaseOrderLookupService(orders), new GoodsReceiptLookupService(receipts));
+        return new ProcurementInvoicedOrders(
+                PurchaseOrderLookupGrpc.newBlockingStub(InProcessGrpc.serving(
+                        new PurchaseOrderLookupGrpcService(new PurchaseOrderLookupService(orders)))),
+                GoodsReceiptLookupGrpc.newBlockingStub(InProcessGrpc.serving(
+                        new GoodsReceiptLookupGrpcService(new GoodsReceiptLookupService(receipts)))));
     }
 
     /** The return-to-vendor context's view of receipts, orders and material stock. */
@@ -76,6 +88,11 @@ public final class CrossContextWiring {
                                                   MaterialRepository materials) {
         return new ProcurementReturnSources(new GoodsReceiptLookupService(receipts), new PurchaseOrderLookupService(orders),
                 new PurchaseOrderReceivingService(orders, NO_ORDER_EVENTS), new MaterialInventoryService(materials));
+    }
+
+    /** Master data's catalogue contract, served over {@code inventory}. */
+    private static MaterialCatalogGrpc.MaterialCatalogBlockingStub materialStub(MaterialInventoryService inventory) {
+        return MaterialCatalogGrpc.newBlockingStub(InProcessGrpc.serving(new MaterialCatalogGrpcService(inventory)));
     }
 
     private static final PurchaseOrderEventPublisher NO_ORDER_EVENTS = new PurchaseOrderEventPublisher() {

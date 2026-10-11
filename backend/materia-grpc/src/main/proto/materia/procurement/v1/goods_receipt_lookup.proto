@@ -35,8 +35,8 @@ message FindReceiptsForOrderResponse {
 // goodsReceipt's GoodsReceiptView
 message GoodsReceiptView {
   string id = 1;
-  string receipt_code = 2;
-  string status = 3;
+  optional string receipt_code = 2;
+  optional string status = 3;
   bool validated = 4;
   optional string purchase_order_id = 5;
   optional string purchase_order_code = 6;

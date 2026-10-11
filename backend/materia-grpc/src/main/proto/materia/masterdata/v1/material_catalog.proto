@@ -31,10 +31,10 @@ message FindMaterialResponse {
 // masterData's MaterialReference
 message MaterialReference {
   string id = 1;
-  string code = 2;
-  string name = 3;
+  optional string code = 2;
+  optional string name = 3;
   optional string description = 4;
-  string unit_of_measure_code = 5;
+  optional string unit_of_measure_code = 5;
   optional materia.common.v1.Money standard_price = 6;
   bool orderable = 7;
 }

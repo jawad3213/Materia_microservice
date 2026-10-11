@@ -26,8 +26,8 @@ message FindOrderResponse {
 // purchaseOrder's PurchaseOrderView
 message PurchaseOrderView {
   string id = 1;
-  string order_code = 2;
-  string status = 3;
+  optional string order_code = 2;
+  optional string status = 3;
   bool receivable = 4;
   bool goods_received = 5;
   optional string supplier_id = 6;
