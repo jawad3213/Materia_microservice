@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "material_stock_movements")
+@Table(name = "material_stock_movements", schema = "masterdata")
 public class MaterialStockMovementJpaEntity extends BaseJpaEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)

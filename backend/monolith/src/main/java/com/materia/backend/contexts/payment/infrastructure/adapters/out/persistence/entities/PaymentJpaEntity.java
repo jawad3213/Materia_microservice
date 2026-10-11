@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "payments", indexes = {
+@Table(name = "payments", schema = "finance", indexes = {
         @Index(name = "idx_payment_code", columnList = "payment_code", unique = true),
         @Index(name = "idx_payment_status", columnList = "status"),
         @Index(name = "idx_payment_supplier_id", columnList = "supplier_id")

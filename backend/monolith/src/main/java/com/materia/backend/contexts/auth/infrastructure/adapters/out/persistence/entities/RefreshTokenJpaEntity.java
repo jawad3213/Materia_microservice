@@ -15,7 +15,7 @@ import java.util.UUID;
  * Stores cryptographically secure SHA-256 hash of refresh tokens.
  */
 @Entity
-@Table(name = "refresh_tokens")
+@Table(name = "refresh_tokens", schema = "identity")
 public class RefreshTokenJpaEntity extends BaseJpaEntity {
 
     @Column(name = "token_hash", nullable = false, unique = true, length = 64)

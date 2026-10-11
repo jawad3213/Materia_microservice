@@ -14,7 +14,7 @@ import java.util.UUID;
  * Persistence mapping for the `password_reset_tokens` table.
  */
 @Entity
-@Table(name = "password_reset_tokens")
+@Table(name = "password_reset_tokens", schema = "identity")
 public class PasswordResetTokenJpaEntity extends BaseJpaEntity {
 
     @Column(name = "token", nullable = false, unique = true, length = 255)

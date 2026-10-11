@@ -34,7 +34,6 @@ locals {
     POSTGRES_USER                           = "materia"
     SPRING_DATASOURCE_DRIVER_CLASS_NAME     = "org.postgresql.Driver"
     SPRING_JPA_HIBERNATE_DIALECT            = "org.hibernate.dialect.PostgreSQLDialect"
-    SPRING_JPA_DEFAULT_SCHEMA               = "public"
     SPRING_FLYWAY_DEFAULT_SCHEMA            = "public"
     SPRING_JPA_BATCH_SIZE                   = "50"
     SPRING_JPA_ORDER_INSERTS                = "true"

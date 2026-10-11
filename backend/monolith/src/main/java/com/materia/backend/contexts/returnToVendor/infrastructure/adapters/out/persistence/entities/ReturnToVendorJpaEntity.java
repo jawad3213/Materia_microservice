@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "return_to_vendor")
+@Table(name = "return_to_vendor", schema = "procurement")
 @Audited(type = "ReturnToVendor", code = "returnCode", readPermission = "return:read")
 public class ReturnToVendorJpaEntity extends BaseJpaEntity {
 

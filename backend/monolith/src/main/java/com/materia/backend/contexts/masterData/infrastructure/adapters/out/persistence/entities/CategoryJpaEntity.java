@@ -13,7 +13,7 @@ import java.util.List;
  * Infrastructure Layer - Maps to the 'categories' database table
  */
 @Entity
-@Table(name = "categories", indexes = {
+@Table(name = "categories", schema = "masterdata", indexes = {
         @Index(name = "idx_category_code", columnList = "code", unique = true),
         @Index(name = "idx_category_parent_id", columnList = "parent_id"),
         @Index(name = "idx_category_status", columnList = "status"),

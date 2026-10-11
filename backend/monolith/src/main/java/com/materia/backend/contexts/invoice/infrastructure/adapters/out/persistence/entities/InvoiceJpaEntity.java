@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "invoices", indexes = {
+@Table(name = "invoices", schema = "finance", indexes = {
         @Index(name = "idx_invoice_code", columnList = "invoice_code", unique = true),
         @Index(name = "idx_invoice_status", columnList = "status"),
         @Index(name = "idx_invoice_supplier_id", columnList = "supplier_id"),

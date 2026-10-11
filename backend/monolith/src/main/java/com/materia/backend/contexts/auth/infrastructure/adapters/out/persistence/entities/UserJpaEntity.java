@@ -17,7 +17,7 @@ import jakarta.persistence.Table;
  * Authenticated strictly by email.
  */
 @Entity
-@Table(name = "users")
+@Table(name = "users", schema = "identity")
 @Audited(type = "User", code = "email", readPermission = "user:read")
 public class UserJpaEntity extends BaseJpaEntity {
 

@@ -13,7 +13,7 @@ import jakarta.persistence.*;
  * Infrastructure Layer - Maps to the 'suppliers' database table
  */
 @Entity
-@Table(name = "suppliers", indexes = {
+@Table(name = "suppliers", schema = "masterdata", indexes = {
         @Index(name = "idx_supplier_code", columnList = "code", unique = true),
         @Index(name = "idx_supplier_status", columnList = "status"),
         @Index(name = "idx_supplier_country", columnList = "country"),
@@ -57,7 +57,7 @@ public class SupplierJpaEntity extends BaseJpaEntity {
 
     // ---- COMMERCIAL TERMS ----
     @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "supplier_payment_terms", joinColumns = @JoinColumn(name = "supplier_id"))
+    @CollectionTable(name = "supplier_payment_terms", schema = "masterdata", joinColumns = @JoinColumn(name = "supplier_id"))
     @Column(name = "payment_term")
     private List<String> paymentTerms;
 

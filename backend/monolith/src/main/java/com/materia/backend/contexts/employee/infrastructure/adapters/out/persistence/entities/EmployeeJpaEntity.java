@@ -14,7 +14,7 @@ import java.util.UUID;
  * Maps the `employees` table in the database.
  */
 @Entity
-@Table(name = "employees")
+@Table(name = "employees", schema = "identity")
 @Audited(type = "Employee", code = "code", readPermission = "user:read")
 public class EmployeeJpaEntity extends BaseJpaEntity {
 

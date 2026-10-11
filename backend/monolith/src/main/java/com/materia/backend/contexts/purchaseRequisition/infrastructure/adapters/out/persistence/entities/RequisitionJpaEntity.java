@@ -23,7 +23,7 @@ import java.util.List;
  * JPA entity for purchase requisitions.
  */
 @Entity
-@Table(name = "purchase_requisitions", indexes = {
+@Table(name = "purchase_requisitions", schema = "procurement", indexes = {
         @Index(name = "idx_pr_code", columnList = "requisition_code", unique = true),
         @Index(name = "idx_pr_status", columnList = "status"),
         @Index(name = "idx_pr_requester_id", columnList = "requester_id"),

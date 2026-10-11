@@ -9,7 +9,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "return_to_vendor_lines")
+@Table(name = "return_to_vendor_lines", schema = "procurement")
 @Audited(type = "ReturnToVendorLine", code = "materialCode", parent = "returnToVendor", parentType = "ReturnToVendor")
 public class ReturnToVendorLineJpaEntity extends BaseJpaEntity {
 

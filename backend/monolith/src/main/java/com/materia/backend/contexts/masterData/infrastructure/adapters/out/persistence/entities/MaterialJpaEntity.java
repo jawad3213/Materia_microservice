@@ -18,7 +18,7 @@ import java.util.List;
  * Infrastructure Layer - Maps to the 'materials' database table
  */
 @Entity
-@Table(name = "materials", indexes = {
+@Table(name = "materials", schema = "masterdata", indexes = {
         @Index(name = "idx_material_code", columnList = "code", unique = true),
         @Index(name = "idx_material_category_id", columnList = "category_id"),
         @Index(name = "idx_material_supplier_id", columnList = "supplier_id"),

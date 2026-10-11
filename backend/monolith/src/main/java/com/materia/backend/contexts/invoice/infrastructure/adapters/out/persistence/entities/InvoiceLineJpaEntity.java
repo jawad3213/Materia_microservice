@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "invoice_lines")
+@Table(name = "invoice_lines", schema = "finance")
 @Audited(type = "InvoiceLine", code = "materialCode", parent = "invoice", parentType = "Invoice")
 public class InvoiceLineJpaEntity extends BaseJpaEntity {
 

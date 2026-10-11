@@ -9,7 +9,7 @@ import jakarta.persistence.UniqueConstraint;
 
 /** One stored setting value. */
 @Entity
-@Table(name = "app_settings", uniqueConstraints = @UniqueConstraint(name = "uk_app_settings_key", columnNames = "setting_key"))
+@Table(name = "app_settings", schema = "finance", uniqueConstraints = @UniqueConstraint(name = "uk_app_settings_key", columnNames = "setting_key"))
 @Audited(type = "Setting", code = "settingKey", readPermission = "setting:read")
 public class AppSettingJpaEntity extends BaseJpaEntity {
 

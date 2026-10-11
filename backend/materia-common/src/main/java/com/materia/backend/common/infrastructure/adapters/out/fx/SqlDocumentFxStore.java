@@ -28,7 +28,7 @@ public abstract class SqlDocumentFxStore implements DocumentFxStore {
     /** The kind of document this store owns. */
     public abstract FxDocument kind();
 
-    /** The owner's table, e.g. {@code purchase_orders}. */
+    /** The owner's table, e.g. {@code purchase_orders}: unqualified, found in the owner's schema (search_path). */
     protected abstract String table();
 
     /** SQL expression of the amount to value. */
@@ -40,7 +40,7 @@ public abstract class SqlDocumentFxStore implements DocumentFxStore {
     @Override
     public Optional<DocumentAmount> find(FxDocument kind, UUID id) {
         List<?> rows = em.createNativeQuery("select id, upper(currency_code), " + amountColumn() + ", " + dateExpression()
-                        + ", status, fx_reporting_currency from public." + table() + " where id = :id")
+                        + ", status, fx_reporting_currency from " + table() + " where id = :id")
                 .setParameter("id", id)
                 .getResultList();
         return rows.stream().findFirst().map(row -> toDocument((Object[]) row));
@@ -49,7 +49,7 @@ public abstract class SqlDocumentFxStore implements DocumentFxStore {
     @Override
     public List<DocumentAmount> unvalued(FxDocument kind, String reportingCurrency, int limit) {
         List<?> rows = em.createNativeQuery("select id, upper(currency_code), " + amountColumn() + ", " + dateExpression()
-                        + ", status, fx_reporting_currency from public." + table()
+                        + ", status, fx_reporting_currency from " + table()
                         + " where status in (:statuses) and currency_code is not null"
                         + " and (fx_reporting_currency is null or fx_reporting_currency <> :reporting)")
                 .setParameter("statuses", kind().committedStatuses())
@@ -61,7 +61,7 @@ public abstract class SqlDocumentFxStore implements DocumentFxStore {
 
     @Override
     public void saveValuation(FxDocument kind, UUID id, FxValuation valuation, BigDecimal amountReporting) {
-        em.createNativeQuery("update public." + table() + " set fx_rate_to_reporting = :rate, "
+        em.createNativeQuery("update " + table() + " set fx_rate_to_reporting = :rate, "
                         + "amount_reporting = :amount, fx_rate_date = :rateDate, fx_rate_source = :source, "
                         + "fx_reporting_currency = :reporting where id = :id")
                 .setParameter("rate", valuation.rate())

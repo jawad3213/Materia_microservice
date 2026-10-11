@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "goods_receipts", indexes = {
+@Table(name = "goods_receipts", schema = "procurement", indexes = {
         @Index(name = "idx_gr_receipt_code", columnList = "receipt_code", unique = true),
         @Index(name = "idx_gr_purchase_order_id", columnList = "purchase_order_id"),
         @Index(name = "idx_gr_status", columnList = "status"),

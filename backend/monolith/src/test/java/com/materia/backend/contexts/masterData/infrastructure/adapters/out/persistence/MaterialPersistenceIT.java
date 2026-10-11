@@ -43,7 +43,7 @@ class MaterialPersistenceIT extends AbstractIntegrationTest {
     }
 
     private int movementRows(Material m) {
-        return jdbc.queryForObject("select count(*) from public.material_stock_movements where material_id = ?",
+        return jdbc.queryForObject("select count(*) from material_stock_movements where material_id = ?",
                 Integer.class, m.getId());
     }
 

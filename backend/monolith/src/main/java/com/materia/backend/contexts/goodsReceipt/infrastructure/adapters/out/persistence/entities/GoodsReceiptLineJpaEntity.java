@@ -18,7 +18,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
-@Table(name = "goods_receipt_lines", indexes = {
+@Table(name = "goods_receipt_lines", schema = "procurement", indexes = {
         @Index(name = "idx_grl_goods_receipt_id", columnList = "goods_receipt_id"),
         @Index(name = "idx_grl_purchase_order_line_id", columnList = "purchase_order_line_id"),
         @Index(name = "idx_grl_material_code", columnList = "material_code"),

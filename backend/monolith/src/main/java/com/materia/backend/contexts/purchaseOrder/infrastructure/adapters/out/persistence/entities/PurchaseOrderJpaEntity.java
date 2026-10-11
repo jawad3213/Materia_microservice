@@ -26,7 +26,7 @@ import java.util.UUID;
  * JPA entity for purchase orders.
  */
 @Entity
-@Table(name = "purchase_orders", indexes = {
+@Table(name = "purchase_orders", schema = "procurement", indexes = {
         @Index(name = "idx_po_code", columnList = "order_code", unique = true),
         @Index(name = "idx_po_status", columnList = "status"),
         @Index(name = "idx_po_delivery_status", columnList = "delivery_status"),

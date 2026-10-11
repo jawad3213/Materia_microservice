@@ -1,5 +1,6 @@
 package com.materia.backend.infrastructure.config;
 
+import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
@@ -46,6 +47,13 @@ public class DatabaseConfig {
     @Value("${spring.datasource.driver-class-name}")
     private String driverClassName;
 
+    /**
+     * Run on every new connection: sets the search_path through which native SQL and the shared kernel's entities,
+     * which name no schema, find their tables (V13__schema_per_service.sql).
+     */
+    @Value("${spring.datasource.hikari.connection-init-sql:}")
+    private String connectionInitSql;
+
     // JPA / Hibernate
     @Value("${spring.jpa.show-sql}")
     private boolean showSql;
@@ -61,9 +69,6 @@ public class DatabaseConfig {
 
     @Value("${spring.jpa.properties.hibernate.dialect}")
     private String dialect;
-
-    @Value("${spring.jpa.properties.hibernate.default_schema}")
-    private String defaultSchema;
 
     @Value("${spring.jpa.properties.hibernate.jdbc.batch_size}")
     private int batchSize;
@@ -82,12 +87,17 @@ public class DatabaseConfig {
     @Primary
     public DataSource dataSource() {
         createDatabaseIfNotExists();
-        return DataSourceBuilder.create()
+        HikariDataSource dataSource = DataSourceBuilder.create()
+                .type(HikariDataSource.class)
                 .url(url)
                 .username(username)
                 .password(password)
                 .driverClassName(driverClassName)
                 .build();
+        if (connectionInitSql != null && !connectionInitSql.isBlank()) {
+            dataSource.setConnectionInitSql(connectionInitSql);
+        }
+        return dataSource;
     }
 
     /**
@@ -151,7 +161,8 @@ public class DatabaseConfig {
         Map<String, Object> properties = new HashMap<>();
         properties.put("hibernate.format_sql", formatSql);
         properties.put("hibernate.hbm2ddl.auto", ddlAuto);
-        properties.put("hibernate.default_schema", defaultSchema);
+        // No hibernate.default_schema: it would put every table in one schema. Each entity names its service's
+        // schema; the shared kernel's tables are in public, first on the connection's search_path.
         properties.put("hibernate.jdbc.batch_size", batchSize);
         properties.put("hibernate.order_inserts", orderInserts);
         properties.put("hibernate.order_updates", orderUpdates);

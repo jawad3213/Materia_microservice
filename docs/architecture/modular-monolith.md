@@ -28,6 +28,29 @@ tables. The shared code names no context's table; each context plugs its own dat
 | FX valuation | A `SqlDocumentFxStore` per document type it owns (its table, amount and date). |
 | User names | `UserDisplayNames`, provided by identity (`AuthUserDisplayNames`). |
 
+## One schema per service
+
+Each service's tables live in its own PostgreSQL schema (`V13__schema_per_service.sql`); the shared kernel's tables
+stay in `public` while every context runs in one application.
+
+| Schema | Tables |
+|---|---|
+| `identity` | users, refresh_tokens, password_reset_tokens, employees |
+| `masterdata` | categories, materials, suppliers, supplier_payment_terms, material_stock_movements |
+| `procurement` | purchase_requisitions(+lines), purchase_orders(+lines), goods_receipts(+lines), return_to_vendor(+lines) |
+| `finance` | invoices(+lines), payments(+lines), app_settings |
+| `analytics` | none yet |
+| `public` (shared kernel) | global_code_sequences, outbox_messages, processed_events, audit_log, exchange_rates, attachments |
+
+- Every entity of a context names its service's schema (`@Table(name = "users", schema = "identity")`);
+  `EntitySchemaTest` fails the build when one does not. The shared kernel's entities name none.
+- Native SQL names no schema: every connection runs `SET search_path TO public, identity, masterdata, procurement,
+  finance, analytics` (`spring.datasource.hikari.connection-init-sql`). An extracted service lists only its own.
+- No foreign key crosses two schemas (`SchemaPerServiceMigrationIT` checks it on a migrated database).
+- New migrations name the schema of every table they touch (`alter table finance.invoices ...`).
+- Rolling back to an image older than V13: run `db/rollback/V13__undo_schema_per_service.sql` first (it puts every
+  table back in `public` and forgets V13; `SchemaPerServiceMigrationIT` runs it).
+
 ## Modules (`backend/`)
 
 `backend/pom.xml` is the parent of every module. Build and test everything from `backend/` with `./mvnw test`; run
@@ -152,9 +175,6 @@ raises replenishment requisitions in procurement (one direction). No transaction
 
 ## Not done yet
 
-- **One database schema per service.** No foreign key and no query crosses a service boundary (`DataOwnershipTest`),
-  but all tables are still in `public`. Moving them (`alter table ... set schema`) relocates live data and needs the
-  migration tests reworked, so it is a separate, deliberate step.
 - **The extraction itself:** a build and image per service, gateway routing to them, and service-to-service
   authentication. Each cross-context adapter (`infrastructure/adapters/out/<context>`) becomes a gRPC client; the
   services and their tests do not change.
