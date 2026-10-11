@@ -9,7 +9,7 @@ it when a SQL or JPQL query names another context's table or entity.
 | Service | Contexts | Notes |
 |---|---|---|
 | API gateway | `gateway` | Validates JWTs, routes, rate-limits, traces (`X-Gateway-Trace-Id`). |
-| Identity | `auth`, `employee` | Issues tokens (`TokenIssuer`), owns users and employees. |
+| Identity | `auth`, `employee` | Issues RS256 tokens (`TokenIssuer`) and publishes their public key at `/.well-known/jwks.json`; owns users and employees. |
 | Master data | `masterData` | Materials, categories, suppliers, stock levels. |
 | Procurement | `purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor` | One flow: PR → PO → GR → RTV. |
 | Finance | `invoice`, `payment`, `settings` | Three-way match, payments, and the settings they use (price tolerance). |
@@ -36,8 +36,9 @@ tables. The shared code names no context's table; each context plugs its own dat
    `domain.enums`, `domain.events` and `domain.exceptions` those expose. In practice only infrastructure
    adapters (`infrastructure/adapters/out/<other context>`) and the gateway do this.
 3. **`common` knows no context.**
-4. **A plain `@EventListener` only handles its own context's events.** Another context's events are handled
-   after commit with `@TransactionalEventListener`, as they will be when they arrive from another service.
+4. **A Spring listener (`@EventListener`, `@TransactionalEventListener`) only handles its own context's events.**
+   Another context's events are handled by an `IntegrationEventHandler` on their JSON payload, as they will be when
+   they arrive from another service.
 
 ## How a cross-context call is wired
 
@@ -48,7 +49,7 @@ goodsReceipt.application.GoodsReceiptService
              └─ PurchaseOrderLookupUseCase / PurchaseOrderReceivingUseCase   (purchaseOrder public API)
 ```
 
-To extract a service, replace the adapter's body with an HTTP client (or an event consumer); the service and its
+To extract a service, replace the adapter's body with a gRPC client (or an event consumer); the service and its
 tests do not change.
 
 Public lookups added for this purpose:
@@ -99,7 +100,7 @@ Procurement changes stock only through events; master data applies them:
 | `GoodsReceiptLineReceived` (goodsReceipt) | `ReceivedGoodsStockHandler` (masterData) | Accepted goods enter stock; the received quantity leaves stock on order. |
 | `ReceiptStockApplied` (masterData) | `ReceiptStockLevelsHandler` (goodsReceipt) | The receipt line records the stock before and after. |
 
-Procurement still reads master data synchronously (material lookups, which become HTTP queries), and master data
+Procurement still reads master data synchronously (material lookups, which become gRPC calls), and master data
 raises replenishment requisitions in procurement (one direction). No transaction spans the two.
 
 ## Not done yet
@@ -108,11 +109,7 @@ raises replenishment requisitions in procurement (one direction). No transaction
   but all tables are still in `public`. Moving them (`alter table ... set schema`) relocates live data and needs the
   migration tests reworked, so it is a separate, deliberate step.
 - **The extraction itself:** a build and image per service, gateway routing to them, and service-to-service
-  authentication. Each cross-context adapter (`infrastructure/adapters/out/<context>`) becomes an HTTP client; the
+  authentication. Each cross-context adapter (`infrastructure/adapters/out/<context>`) becomes a gRPC client; the
   services and their tests do not change.
-- **Older cross-context listeners** (`@TransactionalEventListener` on another context's event class, e.g. the
-  employee record following a profile edit) still use the publisher's Java class. Move them to
-  `IntegrationEventHandler` when their context is extracted.
 - `RequisitionOutput.getLines()` still exposes requisition entities to the requisition web layer; other
   contexts must use `getLineSummaries()`.
-- `@Scheduled` is not enabled, so `ReorderService.nightlyReorderCheck` never runs.

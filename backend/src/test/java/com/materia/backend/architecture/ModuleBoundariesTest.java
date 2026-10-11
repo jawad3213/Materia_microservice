@@ -31,9 +31,9 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  *   <li>Code outside a context (its adapters in the other contexts, the gateway) only uses the context's public
  *   API: its inbound ports, application DTOs, and the enums, events and exceptions those expose.</li>
  *   <li>The shared kernel ({@code common}) knows no context.</li>
- *   <li>A context reacts to another context's events after the change committed
- *   ({@code @TransactionalEventListener}), never inside the other context's transaction ({@code @EventListener}),
- *   as it will once the event arrives from another service.</li>
+ *   <li>A context reacts to another context's events only through an {@code IntegrationEventHandler}, which reads the
+ *   event's JSON payload: never with a Spring listener ({@code @EventListener}, {@code @TransactionalEventListener})
+ *   on the other context's event class, which will not exist once that context is another service.</li>
  * </ul>
  */
 @AnalyzeClasses(packages = "com.materia.backend", importOptions = ImportOption.DoNotIncludeTests.class)
@@ -95,8 +95,8 @@ class ModuleBoundariesTest {
                     .should().dependOnClassesThat().resideInAPackage("com.materia.backend.contexts..");
 
     @ArchTest
-    static final ArchRule plainListenersOnlyHearTheirOwnContext =
-            methods().that().areAnnotatedWith(EventListener.class)
+    static final ArchRule listenersOnlyHearTheirOwnContext =
+            methods().that().areMetaAnnotatedWith(EventListener.class)
                     .should(new ArchCondition<JavaMethod>("listen only to events of their own context") {
                         @Override
                         public void check(JavaMethod method, ConditionEvents events) {
@@ -106,7 +106,7 @@ class ModuleBoundariesTest {
                                 if (source.isPresent() && !source.equals(own)) {
                                     events.add(SimpleConditionEvent.violated(method, method.getFullName()
                                             + " handles an event of " + source.get()
-                                            + " in its transaction: use @TransactionalEventListener"));
+                                            + ": use an IntegrationEventHandler on its JSON payload"));
                                 }
                             }
                         }

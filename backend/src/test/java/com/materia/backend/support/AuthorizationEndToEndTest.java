@@ -3,6 +3,7 @@ package com.materia.backend.support;
 import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.auth.domain.enums.UserStatus;
+import com.materia.backend.support.fixtures.TestJwtKeys;
 import com.materia.backend.gateway.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
+import java.security.KeyPair;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -27,14 +29,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class AuthorizationEndToEndTest {
 
-    private static final String ACCESS_SECRET = "dGVzdC1hY2Nlc3Mtc2VjcmV0LWZvci1sb2NhbC10ZXN0aW5nLW9ubHktbm90LWEtcmVhbC1rZXk=";
-    private static final String REFRESH_SECRET = "dGVzdC1yZWZyZXNoLXNlY3JldC1mb3ItbG9jYWwtdGVzdGluZy1vbmx5LW5vdC1hLXJlYWwta2V5";
+    private static final KeyPair KEYS = TestJwtKeys.generate();
 
     private JwtTokenProvider jwtTokenProvider;
 
     @BeforeEach
     void setUp() {
-        jwtTokenProvider = new JwtTokenProvider(ACCESS_SECRET, REFRESH_SECRET, 900_000L, 604_800_000L);
+        jwtTokenProvider = new JwtTokenProvider(
+                TestJwtKeys.base64(TestJwtKeys.privatePem(KEYS)), TestJwtKeys.base64(TestJwtKeys.publicPem(KEYS)), 900_000L);
     }
 
     private List<GrantedAuthority> buildAuthorities(Role role) {

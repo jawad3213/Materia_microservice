@@ -30,7 +30,7 @@ import java.util.UUID;
  *
  * In a microservice architecture, the Gateway never queries the auth database.
  * All user identity information needed for authorization is embedded in the
- * self-contained JWT token and verified via the shared secret key.
+ * self-contained JWT token and verified with the public key (RS256).
  *
  * ┌────────────────────────────────────────────────────────────┐
  * │  JWT Payload (claims)                                       │

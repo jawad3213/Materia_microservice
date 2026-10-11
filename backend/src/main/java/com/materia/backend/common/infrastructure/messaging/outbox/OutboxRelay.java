@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit;
  * must ignore an {@code eventId} they already processed. Off by default; enable with
  * {@code app.outbox.relay.enabled=true} together with {@code app.messaging.type=kafka}.
  *
- * <p>It runs on its own thread rather than through {@code @Scheduled}, which this application does not enable.
+ * <p>It runs on its own thread rather than through {@code @Scheduled}, so it does not depend on SchedulingConfig.
  */
 @Component
 @ConditionalOnProperty(name = "app.outbox.relay.enabled", havingValue = "true")

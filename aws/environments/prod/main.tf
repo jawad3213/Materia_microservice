@@ -44,7 +44,6 @@ locals {
     SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET = "earliest"
     SPRING_KAFKA_LISTENER_AUTO_STARTUP      = "false"
     JWT_EXPIRATION_MS                       = "900000"
-    JWT_REFRESH_EXPIRATION_MS               = "604800000"
     SPRINGDOC_API_DOCS_PATH                 = "/v3/api-docs"
     SPRINGDOC_SWAGGER_UI_PATH               = "/swagger-ui.html"
     SPRINGDOC_INFO_TITLE                    = "Materia API"
@@ -103,13 +102,11 @@ resource "random_password" "postgres" {
   special = false # the value goes through a docker compose .env file
 }
 
-# The backend base64-decodes its JWT keys (HMAC-SHA, 512 bits).
-resource "random_bytes" "jwt_access" {
-  length = 64
-}
-
-resource "random_bytes" "jwt_refresh" {
-  length = 64
+# RS256 key pair that signs and verifies access tokens. The backend reads each as the Base64 of its PEM, so it
+# stays on one line in the docker compose .env file.
+resource "tls_private_key" "jwt" {
+  algorithm = "RSA"
+  rsa_bits  = 2048
 }
 
 # Grafana's admin account (aws/deploy/docker-compose.yml); Grafana is reached through an SSM port forward only.
@@ -145,8 +142,8 @@ module "app_parameters" {
   secure_parameters = merge(
     {
       POSTGRES_PASSWORD      = random_password.postgres.result
-      JWT_ACCESS_SECRET      = random_bytes.jwt_access.base64
-      JWT_REFRESH_SECRET     = random_bytes.jwt_refresh.base64
+      JWT_PRIVATE_KEY        = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
+      JWT_PUBLIC_KEY         = base64encode(tls_private_key.jwt.public_key_pem)
       GRAFANA_ADMIN_PASSWORD = random_password.grafana_admin.result
     },
     local.bootstrap_admin.secrets,

@@ -1,8 +1,6 @@
 package com.materia.backend.gateway.security;
 
 import io.jsonwebtoken.*;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -10,11 +8,12 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -22,30 +21,38 @@ import java.util.stream.Collectors;
  * 🔹 JWT TOKEN PROVIDER (API GATEWAY)
  *
  * Handles:
- * - Generating Access and Refresh JWT tokens using User UUID strictly as subject and embedding email
- * - Extracting User UUID (subject) and email from Access and Refresh tokens
- * - Validating token integrity and expiration statelessly without database access
+ * - Generating access tokens (RS256) using User UUID strictly as subject and embedding email
+ * - Extracting User UUID (subject), email and roles from access tokens
+ * - Validating token integrity and expiration statelessly with the public key only, without database access
+ * - Publishing the public key as a JWK set, so other services can verify tokens without the private key
+ *
+ * Refresh tokens are not JWTs: they are opaque random strings, stored hashed by the auth context.
  */
 @Component
 public class JwtTokenProvider {
 
-    private enum TokenType {
-        ACCESS,
-        REFRESH
-    }
+    private final RSAPrivateKey signingKey;
+    private final RSAPublicKey verificationKey;
+    private final String keyId;
+    private final long accessExpirationMs;
 
-    private record TokenConfig(String secret, long expirationMs) {}
-
-    private final Map<TokenType, TokenConfig> tokenConfigs = new EnumMap<>(TokenType.class);
-
+    /**
+     * @param privateKey the PKCS#8 private key ({@code -----BEGIN PRIVATE KEY-----}), as PEM or as Base64 of the PEM;
+     *                   blank on a service that only verifies tokens
+     * @param publicKey  the X.509 public key ({@code -----BEGIN PUBLIC KEY-----}), as PEM or as Base64 of the PEM
+     */
     public JwtTokenProvider(
-            @Value("${jwt.access-secret}") String accessSecret,
-            @Value("${jwt.refresh-secret}") String refreshSecret,
-            @Value("${jwt.expiration-ms}") long accessExpirationMs,
-            @Value("${jwt.refresh-expiration-ms}") long refreshExpirationMs) {
+            @Value("${jwt.private-key:}") String privateKey,
+            @Value("${jwt.public-key}") String publicKey,
+            @Value("${jwt.expiration-ms}") long accessExpirationMs) {
 
-        tokenConfigs.put(TokenType.ACCESS, new TokenConfig(accessSecret, accessExpirationMs));
-        tokenConfigs.put(TokenType.REFRESH, new TokenConfig(refreshSecret, refreshExpirationMs));
+        this.verificationKey = JwtKeys.publicKey(publicKey);
+        this.signingKey = StringUtils.hasText(privateKey) ? JwtKeys.privateKey(privateKey) : null;
+        if (signingKey != null && !signingKey.getModulus().equals(verificationKey.getModulus())) {
+            throw new IllegalStateException("jwt.private-key and jwt.public-key are not the same key pair");
+        }
+        this.keyId = JwtKeys.thumbprint(verificationKey);
+        this.accessExpirationMs = accessExpirationMs;
     }
 
     // ===================================================================
@@ -54,36 +61,40 @@ public class JwtTokenProvider {
 
     public String generateAccessToken(UUID userUuid, Authentication authentication) {
         Collection<? extends GrantedAuthority> authorities = (authentication != null) ? authentication.getAuthorities() : null;
-        return generateToken(userUuid, null, authorities, TokenType.ACCESS);
+        return generateToken(userUuid, null, authorities);
     }
 
     public String generateAccessToken(UUID userUuid, Collection<? extends GrantedAuthority> authorities) {
-        return generateToken(userUuid, null, authorities, TokenType.ACCESS);
+        return generateToken(userUuid, null, authorities);
     }
 
     public String generateAccessTokenWithAuthorities(UUID userUuid, Collection<? extends GrantedAuthority> authorities) {
-        return generateToken(userUuid, null, authorities, TokenType.ACCESS);
+        return generateToken(userUuid, null, authorities);
     }
 
     public String generateAccessTokenWithAuthorities(UUID userUuid, String email, Collection<? extends GrantedAuthority> authorities) {
-        return generateToken(userUuid, email, authorities, TokenType.ACCESS);
+        return generateToken(userUuid, email, authorities);
     }
 
     public String generateAccessToken(UUID userUuid) {
-        return generateToken(userUuid, null, null, TokenType.ACCESS);
+        return generateToken(userUuid, null, null);
     }
 
     public boolean validateAccessToken(String token) {
-        return validateToken(token, TokenType.ACCESS);
+        try {
+            parseClaims(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
     }
 
     public UUID getUserIdFromAccessToken(String token) {
-        return getUserIdFromToken(token, TokenType.ACCESS);
+        return UUID.fromString(parseClaims(token).getSubject());
     }
 
     public String getEmailFromAccessToken(String token) {
-        Claims claims = parseClaims(token, TokenType.ACCESS);
-        return claims.get("email", String.class);
+        return parseClaims(token).get("email", String.class);
     }
 
     /**
@@ -91,8 +102,7 @@ public class JwtTokenProvider {
      * Used by the Gateway to build the SecurityContext WITHOUT any database call.
      */
     public List<GrantedAuthority> getAuthoritiesFromAccessToken(String token) {
-        Claims claims = parseClaims(token, TokenType.ACCESS);
-        String roles = claims.get("roles", String.class);
+        String roles = parseClaims(token).get("roles", String.class);
         if (!StringUtils.hasText(roles)) {
             return Collections.emptyList();
         }
@@ -101,6 +111,11 @@ public class JwtTokenProvider {
                 .filter(StringUtils::hasText)
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toList());
+    }
+
+    /** The public key as a JWK set (RFC 7517), served at {@code /.well-known/jwks.json}. */
+    public Map<String, Object> publicJwks() {
+        return Map.of("keys", List.of(JwtKeys.jwk(verificationKey, keyId)));
     }
 
     // ===================================================================
@@ -137,38 +152,29 @@ public class JwtTokenProvider {
         }
     }
 
-    public String generateRefreshToken(UUID userUuid) {
-        return generateToken(userUuid, null, null, TokenType.REFRESH);
-    }
-
-    public boolean validateRefreshToken(String token) {
-        return validateToken(token, TokenType.REFRESH);
-    }
-
-    public UUID getUserIdFromRefreshToken(String token) {
-        return getUserIdFromToken(token, TokenType.REFRESH);
-    }
-
     // ===================================================================
     // 🔹 PRIVATE CORE METHODS
     // ===================================================================
 
-    private String generateToken(UUID userUuid, String email, Collection<? extends GrantedAuthority> authorities, TokenType tokenType) {
+    private String generateToken(UUID userUuid, String email, Collection<? extends GrantedAuthority> authorities) {
         Objects.requireNonNull(userUuid, "User UUID must not be null");
-        TokenConfig config = getConfig(tokenType);
+        if (signingKey == null) {
+            throw new IllegalStateException("jwt.private-key is not set: this service only verifies tokens");
+        }
 
         JwtBuilder builder = Jwts.builder()
+                .header().keyId(keyId).and()
                 .id(UUID.randomUUID().toString())
                 .subject(userUuid.toString())
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + config.expirationMs()))
-                .signWith(getSigningKey(tokenType));
+                .expiration(new Date(System.currentTimeMillis() + accessExpirationMs))
+                .signWith(signingKey, Jwts.SIG.RS256);
 
         if (StringUtils.hasText(email)) {
             builder.claim("email", email);
         }
 
-        if (tokenType == TokenType.ACCESS && authorities != null && !authorities.isEmpty()) {
+        if (authorities != null && !authorities.isEmpty()) {
             String roles = authorities.stream()
                     .map(GrantedAuthority::getAuthority)
                     .collect(Collectors.joining(","));
@@ -178,39 +184,11 @@ public class JwtTokenProvider {
         return builder.compact();
     }
 
-    private UUID getUserIdFromToken(String token, TokenType tokenType) {
-        String subject = parseClaims(token, tokenType).getSubject();
-        return UUID.fromString(subject);
-    }
-
-    private boolean validateToken(String token, TokenType tokenType) {
-        try {
-            parseClaims(token, tokenType);
-            return true;
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
-    }
-
-    private Claims parseClaims(String token, TokenType tokenType) {
+    private Claims parseClaims(String token) {
         return Jwts.parser()
-                .verifyWith(getSigningKey(tokenType))
+                .verifyWith(verificationKey)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-    }
-
-    private SecretKey getSigningKey(TokenType tokenType) {
-        TokenConfig config = getConfig(tokenType);
-        byte[] keyBytes = Decoders.BASE64.decode(config.secret());
-        return Keys.hmacShaKeyFor(keyBytes);
-    }
-
-    private TokenConfig getConfig(TokenType tokenType) {
-        TokenConfig config = tokenConfigs.get(tokenType);
-        if (config == null) {
-            throw new IllegalArgumentException("Unsupported TokenType: " + tokenType);
-        }
-        return config;
     }
 }

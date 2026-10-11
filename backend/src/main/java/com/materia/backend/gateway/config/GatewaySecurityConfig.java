@@ -91,6 +91,8 @@ public class GatewaySecurityConfig {
                 // Endpoint authorization rules
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(publicEndpoints).permitAll()
+                        // The token verification key: public whatever app.security.public-endpoints says.
+                        .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json").permitAll()
                         .requestMatchers(request -> managementPort > 0 && request.getLocalPort() == managementPort)
                         .permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
