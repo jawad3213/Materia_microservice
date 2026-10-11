@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+// Served by Finance. Mirrors InvoiceMetricsUseCase and PaymentMetricsUseCase, method for method: each computes its
+// figures on finance's own data.
+package materia.finance.v1;
+
+import "google/protobuf/empty.proto";
+import "materia/common/v1/metrics.proto";
+
+option java_package = "com.materia.proto.finance.v1";
+option java_multiple_files = true;
+
+// Callers: analytics (the dashboard).
+service FinanceMetrics {
+  // ---- Invoices (InvoiceMetricsUseCase) ----
+  // Invoices per currency
+  rpc InvoicesByCurrency(google.protobuf.Empty) returns (materia.common.v1.CountsResponse);
+  // Invoices in another currency valued at the rate of their own date, per currency
+  rpc InvoicesValuedAtOwnDate(materia.common.v1.ReportingCurrencyRequest) returns (materia.common.v1.CountsResponse);
+  rpc OutstandingByDueDate(OutstandingByDueDateRequest) returns (OutstandingByDueDateResponse);
+  rpc InvoicedByMonth(InvoicedByMonthRequest) returns (materia.common.v1.MonthAmountsResponse);
+  rpc LatestInvoices(materia.common.v1.LatestRequest) returns (materia.common.v1.LatestResponse);
+
+  // ---- Payments (PaymentMetricsUseCase) ----
+  // Payments per currency
+  rpc PaymentsByCurrency(google.protobuf.Empty) returns (materia.common.v1.CountsResponse);
+  rpc PaymentsValuedAtOwnDate(materia.common.v1.ReportingCurrencyRequest) returns (materia.common.v1.CountsResponse);
+  rpc CountPaymentsInStatus(materia.common.v1.StatusRequest) returns (materia.common.v1.CountResponse);
+  rpc PaymentsByMonth(PaymentsByMonthRequest) returns (materia.common.v1.MonthAmountsResponse);
+  rpc LatestPayments(materia.common.v1.LatestRequest) returns (materia.common.v1.LatestResponse);
+}
+
+message OutstandingByDueDateRequest {
+  // Invoice type: "STANDARD" or "CREDIT_NOTE"
+  string type = 1;
+  repeated string statuses = 2;
+  materia.common.v1.ReportingRates rates = 3;
+}
+
+// invoice's OutstandingByDueDate: what is still to pay, per due date and currency.
+message OutstandingByDueDateResponse {
+  repeated Group groups = 1;
+
+  message Group {
+    // ISO date; absent for invoices without a due date
+    optional string due_date = 1;
+    string currency = 2;
+    int64 invoices = 3;
+    string outstanding = 4;
+  }
+}
+
+message InvoicedByMonthRequest {
+  // Statuses left out of the totals (e.g. cancelled)
+  repeated string excluded_statuses = 1;
+  materia.common.v1.ReportingRates rates = 2;
+  materia.common.v1.Period period = 3;
+}
+
+message PaymentsByMonthRequest {
+  string status = 1;
+  materia.common.v1.ReportingRates rates = 2;
+  materia.common.v1.Period period = 3;
+}

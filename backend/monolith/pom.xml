@@ -150,6 +150,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- The gRPC contracts, so GrpcContractsTest holds them to the use cases they mirror (tests only for now) -->
+        <dependency>
+            <groupId>com.materia</groupId>
+            <artifactId>materia-grpc</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- ArchUnit: keeps the bounded contexts separable (ModuleBoundariesTest) -->
         <dependency>
             <groupId>com.tngtech.archunit</groupId>

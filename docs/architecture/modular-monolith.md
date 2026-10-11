@@ -51,6 +51,13 @@ a change in another service (stock, replenishment requisitions) travels as an ev
 | `procurement.v1.PurchaseOrderLookup` | `PurchaseOrderLookupUseCase` | finance |
 | `procurement.v1.GoodsReceiptLookup` | `GoodsReceiptLookupUseCase` | finance |
 | `procurement.v1.Replenishment` | `ReplenishmentUseCase.hasOpenRequisitionFor` | master data |
+| `procurement.v1.ProcurementMetrics` | `RequisitionMetricsUseCase`, `PurchaseOrderMetricsUseCase`, `GoodsReceiptMetricsUseCase`, `ReturnMetricsUseCase` | analytics |
+| `finance.v1.FinanceMetrics` | `InvoiceMetricsUseCase`, `PaymentMetricsUseCase` | analytics |
+| `masterdata.v1.MasterDataMetrics` | `MaterialMetricsUseCase` | analytics |
+
+`GrpcContractsTest` holds each contract to its use cases: a method added to one of them fails the build until it has
+its RPC, or is listed as deliberately left off (a write, which travels as an event). The reporting contracts share
+their shapes (`common.v1.metrics`: reporting rates, periods, month amounts, recent documents).
 
 Conventions: ids are UUID strings, amounts are `common.v1.Money` (a decimal string and a currency), dates are ISO
 strings, and a lookup that finds nothing returns an empty `optional` field. A field number is never reused; a
@@ -156,6 +163,6 @@ raises replenishment requisitions in procurement (one direction). No transaction
 - **Writes that still cross services synchronously.** Returned goods go back on order through
   `MaterialInventoryUseCase.addStockOnOrder` (`ProcurementReturnSources`), and master data raises replenishment
   requisitions through `ReplenishmentUseCase.raise*`. Both become events before their services are split.
-- **The dashboard's metrics** have no gRPC contract yet: about thirty fine-grained calls, which an event-fed read
-  model in analytics may replace. Decided when analytics is extracted.
+- **The dashboard's metrics** cross services through 32 fine-grained RPCs. When analytics is extracted, measure how
+  many a dashboard load makes; an event-fed read model in analytics can replace the hottest ones.
 - **Dev seeders** call other contexts directly; each service will seed its own data.

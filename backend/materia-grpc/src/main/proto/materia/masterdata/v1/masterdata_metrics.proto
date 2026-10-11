@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+// Served by Master Data. Mirrors MaterialMetricsUseCase, method for method.
+package materia.masterdata.v1;
+
+option java_package = "com.materia.proto.masterdata.v1";
+option java_multiple_files = true;
+
+// Callers: analytics (the dashboard: stock alerts, spend per category).
+service MasterDataMetrics {
+  rpc CountStockAlerts(CountStockAlertsRequest) returns (CountStockAlertsResponse);
+  rpc StockAlerts(StockAlertsRequest) returns (StockAlertsResponse);
+  rpc CategoryNamesById(CategoryNamesByIdRequest) returns (CategoryNamesResponse);
+  rpc CategoryNamesByCode(CategoryNamesByCodeRequest) returns (CategoryNamesResponse);
+}
+
+message CountStockAlertsRequest {
+  // Only materials out of stock, rather than all below their reorder point
+  bool out_of_stock_only = 1;
+}
+
+message CountStockAlertsResponse {
+  int64 count = 1;
+}
+
+message StockAlertsRequest {
+  int32 limit = 1;
+}
+
+// masterData's StockAlert
+message StockAlertsResponse {
+  repeated StockAlert alerts = 1;
+
+  message StockAlert {
+    string id = 1;
+    string code = 2;
+    string name = 3;
+    int32 current_stock = 4;
+    optional int32 reorder_point = 5;
+    optional int32 safety_stock = 6;
+    int32 stock_on_order = 7;
+    optional string unit = 8;
+  }
+}
+
+message CategoryNamesByIdRequest {
+  // Material UUIDs
+  repeated string material_ids = 1;
+}
+
+message CategoryNamesByCodeRequest {
+  repeated string material_codes = 1;
+}
+
+// Material id or code -> its category name; a material that is unknown or has no category is absent.
+message CategoryNamesResponse {
+  map<string, string> category_names = 1;
+}

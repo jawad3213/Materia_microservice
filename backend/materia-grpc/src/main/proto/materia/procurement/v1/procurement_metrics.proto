@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+// Served by Procurement. Mirrors RequisitionMetricsUseCase, PurchaseOrderMetricsUseCase, GoodsReceiptMetricsUseCase
+// and ReturnMetricsUseCase, method for method: each computes its figures on procurement's own data.
+package materia.procurement.v1;
+
+import "google/protobuf/empty.proto";
+import "materia/common/v1/metrics.proto";
+
+option java_package = "com.materia.proto.procurement.v1";
+option java_multiple_files = true;
+
+// Callers: analytics (the dashboard).
+service ProcurementMetrics {
+  // ---- Requisitions (RequisitionMetricsUseCase) ----
+  rpc CountRequisitionsInStatus(materia.common.v1.StatusRequest) returns (materia.common.v1.CountResponse);
+  rpc LatestRequisitions(materia.common.v1.LatestRequest) returns (materia.common.v1.LatestResponse);
+
+  // ---- Purchase orders (PurchaseOrderMetricsUseCase) ----
+  // Orders per currency
+  rpc OrdersByCurrency(google.protobuf.Empty) returns (materia.common.v1.CountsResponse);
+  // Orders in another currency valued at the rate of their own date, per currency
+  rpc OrdersValuedAtOwnDate(materia.common.v1.ReportingCurrencyRequest) returns (materia.common.v1.CountsResponse);
+  rpc CountOrders(materia.common.v1.StatusesRequest) returns (materia.common.v1.CountResponse);
+  rpc CountOrdersExpectedBefore(CountOrdersExpectedBeforeRequest) returns (materia.common.v1.CountResponse);
+  rpc SumOrders(materia.common.v1.StatusesWithRatesRequest) returns (materia.common.v1.AmountResponse);
+  rpc OrdersByMonth(materia.common.v1.StatusesByMonthRequest) returns (materia.common.v1.MonthAmountsResponse);
+  // Orders per status
+  rpc CountOrdersByStatus(google.protobuf.Empty) returns (materia.common.v1.CountsResponse);
+  rpc SpendByMaterial(materia.common.v1.StatusesWithRatesRequest) returns (SpendByMaterialResponse);
+  rpc SpendBySupplier(materia.common.v1.StatusesWithRatesRequest) returns (materia.common.v1.CountedAmountsResponse);
+  rpc LatestOrders(materia.common.v1.LatestRequest) returns (materia.common.v1.LatestResponse);
+
+  // ---- Goods receipts (GoodsReceiptMetricsUseCase) ----
+  rpc CountReceipts(CountReceiptsRequest) returns (materia.common.v1.CountResponse);
+  rpc ReceiptTotals(materia.common.v1.StatusesRequest) returns (ReceiptTotalsResponse);
+  rpc ReceiptTotalsBySupplier(materia.common.v1.StatusesRequest) returns (ReceiptTotalsBySupplierResponse);
+  rpc LatestReceipts(materia.common.v1.LatestRequest) returns (materia.common.v1.LatestResponse);
+
+  // ---- Returns to vendor (ReturnMetricsUseCase) ----
+  rpc CountReturnsInStatus(materia.common.v1.StatusRequest) returns (materia.common.v1.CountResponse);
+  rpc LatestReturns(materia.common.v1.LatestRequest) returns (materia.common.v1.LatestResponse);
+}
+
+message CountOrdersExpectedBeforeRequest {
+  repeated string statuses = 1;
+  // ISO date
+  string date = 2;
+}
+
+// purchaseOrder's MaterialSpend: order-line value per material. Analytics maps materials to categories through
+// MasterDataMetrics.
+message SpendByMaterialResponse {
+  repeated MaterialSpend spend = 1;
+
+  message MaterialSpend {
+    // UUID; absent for a line without a catalogue material, which then has a code
+    optional string material_id = 1;
+    optional string material_code = 2;
+    int64 lines = 3;
+    string amount = 4;
+  }
+}
+
+message CountReceiptsRequest {
+  repeated string statuses = 1;
+  // ISO dates; absent means unbounded
+  optional string from = 2;
+  optional string to = 3;
+  bool with_rejection_only = 4;
+}
+
+// goodsReceipt's ReceiptTotals
+message ReceiptTotals {
+  int64 receipts = 1;
+  int64 units_received = 2;
+  int64 units_accepted = 3;
+  int64 units_rejected = 4;
+  // Receipts with both a receipt date and an expected delivery date, and those received by that date
+  int64 dated_receipts = 5;
+  int64 on_time_receipts = 6;
+}
+
+message ReceiptTotalsResponse {
+  ReceiptTotals totals = 1;
+}
+
+message ReceiptTotalsBySupplierResponse {
+  // supplier UUID -> totals
+  map<string, ReceiptTotals> by_supplier = 1;
+}
