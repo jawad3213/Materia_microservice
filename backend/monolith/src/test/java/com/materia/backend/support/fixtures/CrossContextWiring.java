@@ -83,11 +83,17 @@ public final class CrossContextWiring {
                         new GoodsReceiptLookupGrpcService(new GoodsReceiptLookupService(receipts)))));
     }
 
-    /** The return-to-vendor context's view of receipts, orders and material stock. */
+    /**
+     * The return-to-vendor context's view of receipts and orders; goods put back on order reach the materials held by
+     * {@code materials} through master data's handler of {@code ReplacementPutOnOrder}, applied at once.
+     */
     public static ReturnSources returnSourcesOver(GoodsReceiptRepository receipts, PurchaseOrderRepository orders,
                                                   MaterialRepository materials) {
+        InlineEvents events = new InlineEvents().add(
+                new com.materia.backend.contexts.masterData.infrastructure.adapters.in.events.StockOnOrderHandler(
+                        new MaterialInventoryService(materials)));
         return new ProcurementReturnSources(new GoodsReceiptLookupService(receipts), new PurchaseOrderLookupService(orders),
-                new PurchaseOrderReceivingService(orders, NO_ORDER_EVENTS), new MaterialInventoryService(materials));
+                new PurchaseOrderReceivingService(orders, NO_ORDER_EVENTS), events);
     }
 
     /** Master data's catalogue contract, served over {@code inventory}. */

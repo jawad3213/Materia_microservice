@@ -2,18 +2,20 @@ package com.materia.backend.contexts.returnToVendor.infrastructure.adapters.out.
 
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptView;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptLookupUseCase;
-import com.materia.backend.contexts.masterData.domain.ports.in.MaterialInventoryUseCase;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.in.PurchaseOrderLookupUseCase;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.in.PurchaseOrderReceivingUseCase;
+import com.materia.backend.contexts.returnToVendor.domain.events.ReplacementPutOnOrderEvent;
 import com.materia.backend.contexts.returnToVendor.domain.ports.out.ReturnSources;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Reaches receipts, orders and material stock through the public use cases of the goods receipt, purchase order
- * and master data contexts.
+ * Reaches receipts and orders through the public use cases of the goods receipt and purchase order contexts (the same
+ * service), and puts replaced goods back on order with a {@link ReplacementPutOnOrderEvent}, which master data
+ * applies to its stock.
  */
 @Component
 public class ProcurementReturnSources implements ReturnSources {
@@ -21,16 +23,16 @@ public class ProcurementReturnSources implements ReturnSources {
     private final GoodsReceiptLookupUseCase receipts;
     private final PurchaseOrderLookupUseCase orders;
     private final PurchaseOrderReceivingUseCase receiving;
-    private final MaterialInventoryUseCase materials;
+    private final ApplicationEventPublisher events;
 
     public ProcurementReturnSources(GoodsReceiptLookupUseCase receipts,
                                     PurchaseOrderLookupUseCase orders,
                                     PurchaseOrderReceivingUseCase receiving,
-                                    MaterialInventoryUseCase materials) {
+                                    ApplicationEventPublisher events) {
         this.receipts = receipts;
         this.orders = orders;
         this.receiving = receiving;
-        this.materials = materials;
+        this.events = events;
     }
 
     @Override
@@ -51,7 +53,7 @@ public class ProcurementReturnSources implements ReturnSources {
 
     @Override
     public void putBackOnOrder(UUID materialId, String materialCode, int quantity, String userId) {
-        materials.addStockOnOrder(materialId, materialCode, quantity, userId);
+        events.publishEvent(new ReplacementPutOnOrderEvent(materialId, materialCode, quantity, userId));
     }
 
     private static ReceiptToReturn toReceiptToReturn(GoodsReceiptView receipt) {

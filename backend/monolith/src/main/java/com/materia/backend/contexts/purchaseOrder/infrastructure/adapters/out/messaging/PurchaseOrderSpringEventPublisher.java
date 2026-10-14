@@ -11,7 +11,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Spring In-Process Event adapter for the purchase order event publishing port.
- * Active when app.messaging.type=spring (or when not explicitly set).
+ * Always active: events are published through Spring whatever app.messaging.type is; with kafka, the outbox relay
+ * also sends them to the broker.
  */
 @Component
 public class PurchaseOrderSpringEventPublisher implements PurchaseOrderEventPublisher {

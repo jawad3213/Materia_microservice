@@ -12,7 +12,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Spring In-Process Event adapter for the goods receipt event publishing port.
- * Active when app.messaging.type=spring (or when not explicitly set).
+ * Always active: events are published through Spring whatever app.messaging.type is; with kafka, the outbox relay
+ * also sends them to the broker.
  */
 @Component
 public class GoodsReceiptSpringEventPublisher implements GoodsReceiptEventPublisher {

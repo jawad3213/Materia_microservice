@@ -7,9 +7,12 @@ import com.materia.grpc.deadline.DefaultDeadlineClientInterceptor;
 import com.materia.grpc.errors.ExceptionTranslatingServerInterceptor;
 import com.materia.grpc.trace.TraceIdClientInterceptor;
 import com.materia.grpc.trace.TraceIdServerInterceptor;
+import com.materia.proto.finance.v1.FinanceMetricsGrpc;
 import com.materia.proto.identity.v1.UserDirectoryGrpc;
+import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
 import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
+import com.materia.proto.procurement.v1.ProcurementMetricsGrpc;
 import com.materia.proto.procurement.v1.PurchaseOrderLookupGrpc;
 import com.materia.proto.procurement.v1.ReplenishmentGrpc;
 import io.grpc.BindableService;
@@ -57,7 +60,7 @@ public class GrpcConfig {
 
     @Bean(destroyMethod = "shutdownNow")
     public ManagedChannel grpcChannel(OutgoingCallerToken tokens,
-                                      @Value("${app.grpc.client.deadline:2s}") Duration deadline) {
+                                      @Value("${app.grpc.client.deadline:30s}") Duration deadline) {
         return InProcessChannelBuilder.forName(serverName)
                 .directExecutor()
                 .intercept(new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
@@ -88,6 +91,21 @@ public class GrpcConfig {
     @Bean
     public ReplenishmentGrpc.ReplenishmentBlockingStub replenishmentStub(ManagedChannel grpcChannel) {
         return ReplenishmentGrpc.newBlockingStub(grpcChannel);
+    }
+
+    @Bean
+    public ProcurementMetricsGrpc.ProcurementMetricsBlockingStub procurementMetricsStub(ManagedChannel grpcChannel) {
+        return ProcurementMetricsGrpc.newBlockingStub(grpcChannel);
+    }
+
+    @Bean
+    public FinanceMetricsGrpc.FinanceMetricsBlockingStub financeMetricsStub(ManagedChannel grpcChannel) {
+        return FinanceMetricsGrpc.newBlockingStub(grpcChannel);
+    }
+
+    @Bean
+    public MasterDataMetricsGrpc.MasterDataMetricsBlockingStub masterDataMetricsStub(ManagedChannel grpcChannel) {
+        return MasterDataMetricsGrpc.newBlockingStub(grpcChannel);
     }
 
     /** Started before the application takes requests or runs its start-up jobs, stopped after. */

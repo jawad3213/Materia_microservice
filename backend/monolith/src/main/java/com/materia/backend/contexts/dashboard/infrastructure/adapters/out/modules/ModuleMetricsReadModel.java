@@ -4,14 +4,29 @@ import com.materia.backend.common.application.metrics.CountedAmount;
 import com.materia.backend.common.application.metrics.RecentDocument;
 import com.materia.backend.common.application.metrics.ReportingRates;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel;
-import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptMetricsUseCase;
-import com.materia.backend.contexts.invoice.domain.ports.in.InvoiceMetricsUseCase;
-import com.materia.backend.contexts.masterData.domain.ports.in.MaterialMetricsUseCase;
-import com.materia.backend.contexts.payment.domain.ports.in.PaymentMetricsUseCase;
-import com.materia.backend.contexts.purchaseOrder.application.dtos.MaterialSpend;
-import com.materia.backend.contexts.purchaseOrder.domain.ports.in.PurchaseOrderMetricsUseCase;
-import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.RequisitionMetricsUseCase;
-import com.materia.backend.contexts.returnToVendor.domain.ports.in.ReturnMetricsUseCase;
+import com.materia.grpc.convert.MetricsProtos;
+import com.materia.grpc.convert.ProtoValues;
+import com.materia.grpc.errors.GrpcCalls;
+import com.materia.proto.common.v1.LatestRequest;
+import com.materia.proto.common.v1.ReportingCurrencyRequest;
+import com.materia.proto.common.v1.StatusRequest;
+import com.materia.proto.common.v1.StatusesByMonthRequest;
+import com.materia.proto.common.v1.StatusesRequest;
+import com.materia.proto.common.v1.StatusesWithRatesRequest;
+import com.materia.proto.finance.v1.FinanceMetricsGrpc;
+import com.materia.proto.finance.v1.InvoicedByMonthRequest;
+import com.materia.proto.finance.v1.OutstandingByDueDateRequest;
+import com.materia.proto.finance.v1.PaymentsByMonthRequest;
+import com.materia.proto.masterdata.v1.CategoryNamesByCodeRequest;
+import com.materia.proto.masterdata.v1.CategoryNamesByIdRequest;
+import com.materia.proto.masterdata.v1.CountStockAlertsRequest;
+import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
+import com.materia.proto.masterdata.v1.StockAlertsRequest;
+import com.materia.proto.procurement.v1.CountOrdersExpectedBeforeRequest;
+import com.materia.proto.procurement.v1.CountReceiptsRequest;
+import com.materia.proto.procurement.v1.ProcurementMetricsGrpc;
+import com.materia.proto.procurement.v1.SpendByMaterialResponse;
+import com.google.protobuf.Empty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -22,44 +37,46 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
- * The dashboard's figures, composed from each context's own reporting use case (API composition): no context's
- * table is read here, so each call becomes a request to that context's service once the contexts are split.
+ * The dashboard's figures, composed from each service's reporting contract (API composition): procurement.v1,
+ * finance.v1 and masterdata.v1 metrics. No other service's table or class is read here.
  */
 @Component
 public class ModuleMetricsReadModel implements DashboardReadModel {
 
     private static final String UNCATEGORIZED = "Uncategorized";
 
-    private final RequisitionMetricsUseCase requisitions;
-    private final PurchaseOrderMetricsUseCase orders;
-    private final GoodsReceiptMetricsUseCase receipts;
-    private final InvoiceMetricsUseCase invoices;
-    private final PaymentMetricsUseCase payments;
-    private final MaterialMetricsUseCase materials;
-    private final ReturnMetricsUseCase returns;
+    private final ProcurementMetricsGrpc.ProcurementMetricsBlockingStub procurement;
+    private final FinanceMetricsGrpc.FinanceMetricsBlockingStub finance;
+    private final MasterDataMetricsGrpc.MasterDataMetricsBlockingStub masterData;
 
-    public ModuleMetricsReadModel(RequisitionMetricsUseCase requisitions, PurchaseOrderMetricsUseCase orders,
-                                  GoodsReceiptMetricsUseCase receipts, InvoiceMetricsUseCase invoices,
-                                  PaymentMetricsUseCase payments, MaterialMetricsUseCase materials,
-                                  ReturnMetricsUseCase returns) {
-        this.requisitions = requisitions;
-        this.orders = orders;
-        this.receipts = receipts;
-        this.invoices = invoices;
-        this.payments = payments;
-        this.materials = materials;
-        this.returns = returns;
+    public ModuleMetricsReadModel(ProcurementMetricsGrpc.ProcurementMetricsBlockingStub procurement,
+                                  FinanceMetricsGrpc.FinanceMetricsBlockingStub finance,
+                                  MasterDataMetricsGrpc.MasterDataMetricsBlockingStub masterData) {
+        this.procurement = procurement;
+        this.finance = finance;
+        this.masterData = masterData;
     }
 
-    private static ReportingRates reporting(Rates rates) {
-        return new ReportingRates(rates.reportingCurrency(), rates.current());
+    private static com.materia.proto.common.v1.ReportingRates rates(Rates rates) {
+        return MetricsProtos.rates(new ReportingRates(rates.reportingCurrency(), rates.current()));
     }
 
-    private static List<MonthAmount> months(List<com.materia.backend.common.application.metrics.MonthAmount> months) {
-        return months.stream().map(m -> new MonthAmount(m.month(), m.amount())).toList();
+    private static List<MonthAmount> months(com.materia.proto.common.v1.MonthAmountsResponse months) {
+        return MetricsProtos.months(months).stream().map(m -> new MonthAmount(m.month(), m.amount())).toList();
+    }
+
+    private static StatusesRequest statuses(Set<String> statuses) {
+        return StatusesRequest.newBuilder().addAllStatuses(statuses).build();
+    }
+
+    private static StatusesWithRatesRequest statuses(Set<String> statuses, Rates rates) {
+        return StatusesWithRatesRequest.newBuilder().addAllStatuses(statuses).setRates(rates(rates)).build();
+    }
+
+    private static StatusRequest status(String status) {
+        return StatusRequest.newBuilder().setStatus(status == null ? "" : status).build();
     }
 
     // ---- Currency ----
@@ -67,9 +84,10 @@ public class ModuleMetricsReadModel implements DashboardReadModel {
     @Override
     public Map<String, Long> documentsByCurrency(boolean withOrders, boolean withInvoices, boolean withPayments) {
         Map<String, Long> counts = new LinkedHashMap<>();
-        if (withOrders) orders.documentsByCurrency().forEach((c, n) -> counts.merge(c, n, Long::sum));
-        if (withInvoices) invoices.documentsByCurrency().forEach((c, n) -> counts.merge(c, n, Long::sum));
-        if (withPayments) payments.documentsByCurrency().forEach((c, n) -> counts.merge(c, n, Long::sum));
+        Empty all = Empty.getDefaultInstance();
+        if (withOrders) merge(counts, GrpcCalls.call(() -> procurement.ordersByCurrency(all)));
+        if (withInvoices) merge(counts, GrpcCalls.call(() -> finance.invoicesByCurrency(all)));
+        if (withPayments) merge(counts, GrpcCalls.call(() -> finance.paymentsByCurrency(all)));
         return counts;
     }
 
@@ -77,68 +95,83 @@ public class ModuleMetricsReadModel implements DashboardReadModel {
     public Map<String, Long> documentsValuedAtOwnDate(String reportingCurrency, boolean withOrders, boolean withInvoices,
                                                       boolean withPayments) {
         Map<String, Long> counts = new LinkedHashMap<>();
-        if (withOrders) orders.valuedAtOwnDate(reportingCurrency).forEach((c, n) -> counts.merge(c, n, Long::sum));
-        if (withInvoices) invoices.valuedAtOwnDate(reportingCurrency).forEach((c, n) -> counts.merge(c, n, Long::sum));
-        if (withPayments) payments.valuedAtOwnDate(reportingCurrency).forEach((c, n) -> counts.merge(c, n, Long::sum));
+        ReportingCurrencyRequest request = ReportingCurrencyRequest.newBuilder()
+                .setReportingCurrency(reportingCurrency == null ? "" : reportingCurrency).build();
+        if (withOrders) merge(counts, GrpcCalls.call(() -> procurement.ordersValuedAtOwnDate(request)));
+        if (withInvoices) merge(counts, GrpcCalls.call(() -> finance.invoicesValuedAtOwnDate(request)));
+        if (withPayments) merge(counts, GrpcCalls.call(() -> finance.paymentsValuedAtOwnDate(request)));
         return counts;
+    }
+
+    private static void merge(Map<String, Long> counts, com.materia.proto.common.v1.CountsResponse more) {
+        MetricsProtos.counts(more).forEach((c, n) -> counts.merge(c, n, Long::sum));
     }
 
     // ---- Requisitions ----
 
     @Override
     public long countRequisitions(String status) {
-        return requisitions.countInStatus(status);
+        return GrpcCalls.call(() -> procurement.countRequisitionsInStatus(status(status))).getCount();
     }
 
     // ---- Purchase orders ----
 
     @Override
     public long countOrders(Set<String> statuses) {
-        return orders.count(statuses);
+        return GrpcCalls.call(() -> procurement.countOrders(statuses(statuses))).getCount();
     }
 
     @Override
     public long countOrdersExpectedBefore(Set<String> statuses, LocalDate date) {
-        return orders.countExpectedBefore(statuses, date);
+        CountOrdersExpectedBeforeRequest.Builder request = CountOrdersExpectedBeforeRequest.newBuilder()
+                .addAllStatuses(statuses);
+        if (date != null) request.setDate(date.toString());
+        return GrpcCalls.call(() -> procurement.countOrdersExpectedBefore(request.build())).getCount();
     }
 
     @Override
     public BigDecimal sumOrders(Set<String> statuses, Rates rates) {
-        return orders.sum(statuses, reporting(rates));
+        return ProtoValues.decimal(GrpcCalls.call(() -> procurement.sumOrders(statuses(statuses, rates))).getAmount());
     }
 
     @Override
     public List<MonthAmount> ordersByMonth(Set<String> statuses, Rates rates, LocalDate from, LocalDate to) {
-        return months(orders.byMonth(statuses, reporting(rates), from, to));
+        return months(GrpcCalls.call(() -> procurement.ordersByMonth(StatusesByMonthRequest.newBuilder()
+                .addAllStatuses(statuses).setRates(rates(rates)).setPeriod(MetricsProtos.period(from, to)).build())));
     }
 
     @Override
     public Map<String, Long> ordersByStatus() {
-        return orders.countByStatus();
+        return MetricsProtos.counts(GrpcCalls.call(() -> procurement.countOrdersByStatus(Empty.getDefaultInstance())));
     }
 
     /**
-     * Order-line value per material category: the order context gives the spend per material, the master data context
-     * each material's category (by id, or by code for a line without one). A line whose material is unknown or has no
-     * category counts as "Uncategorized".
+     * Order-line value per material category: procurement gives the spend per material, master data each material's
+     * category (by id, or by code for a line without one). A line whose material is unknown or has no category counts
+     * as "Uncategorized".
      */
     @Override
     public List<Group> spendByCategory(Set<String> statuses, Rates rates) {
-        List<MaterialSpend> spend = orders.spendByMaterial(statuses, reporting(rates));
+        List<SpendByMaterialResponse.MaterialSpend> spend =
+                GrpcCalls.call(() -> procurement.spendByMaterial(statuses(statuses, rates))).getSpendList();
         if (spend.isEmpty()) return List.of();
-        Map<UUID, String> byId = materials.categoryNamesById(spend.stream()
-                .map(MaterialSpend::materialId).filter(Objects::nonNull).collect(Collectors.toSet()));
-        Map<String, String> byCode = materials.categoryNamesByCode(spend.stream()
-                .filter(s -> s.materialId() == null).map(MaterialSpend::materialCode).filter(Objects::nonNull)
-                .collect(Collectors.toSet()));
-
+        Map<String, String> byId = GrpcCalls.call(() -> masterData.categoryNamesById(CategoryNamesByIdRequest.newBuilder()
+                .addAllMaterialIds(spend.stream().filter(SpendByMaterialResponse.MaterialSpend::hasMaterialId)
+                        .map(SpendByMaterialResponse.MaterialSpend::getMaterialId).distinct().toList())
+                .build())).getCategoryNamesMap();
+        Map<String, String> byCode = GrpcCalls.call(() -> masterData.categoryNamesByCode(CategoryNamesByCodeRequest.newBuilder()
+                .addAllMaterialCodes(spend.stream().filter(s -> !s.hasMaterialId() && s.hasMaterialCode())
+                        .map(SpendByMaterialResponse.MaterialSpend::getMaterialCode).filter(Objects::nonNull)
+                        .distinct().toList())
+                .build())).getCategoryNamesMap();
         Map<String, long[]> lines = new LinkedHashMap<>();
         Map<String, BigDecimal> amounts = new LinkedHashMap<>();
-        for (MaterialSpend s : spend) {
-            String category = s.materialId() != null ? byId.get(s.materialId()) : byCode.get(s.materialCode());
+        for (SpendByMaterialResponse.MaterialSpend s : spend) {
+            String category = s.hasMaterialId() ? byId.get(s.getMaterialId())
+                    : s.hasMaterialCode() ? byCode.get(s.getMaterialCode()) : null;
             if (category == null || category.isBlank()) category = UNCATEGORIZED;
-            lines.computeIfAbsent(category, k -> new long[1])[0] += s.lines();
-            amounts.merge(category, s.amount(), BigDecimal::add);
+            lines.computeIfAbsent(category, k -> new long[1])[0] += s.getLines();
+            amounts.merge(category, ProtoValues.decimalOrZero(s.getAmount()), BigDecimal::add);
         }
         return amounts.entrySet().stream()
                 .map(e -> new Group(e.getKey(), e.getKey(), lines.get(e.getKey())[0], e.getValue()))
@@ -147,7 +180,8 @@ public class ModuleMetricsReadModel implements DashboardReadModel {
 
     @Override
     public List<Group> spendBySupplier(Set<String> statuses, Rates rates) {
-        return orders.spendBySupplier(statuses, reporting(rates)).stream().map(ModuleMetricsReadModel::group).toList();
+        return MetricsProtos.groups(GrpcCalls.call(() -> procurement.spendBySupplier(statuses(statuses, rates)))).stream()
+                .map(ModuleMetricsReadModel::group).toList();
     }
 
     private static Group group(CountedAmount c) {
@@ -158,64 +192,82 @@ public class ModuleMetricsReadModel implements DashboardReadModel {
 
     @Override
     public long countReceipts(Set<String> statuses, LocalDate from, LocalDate to, boolean withRejectionOnly) {
-        return receipts.count(statuses, from, to, withRejectionOnly);
+        CountReceiptsRequest.Builder request = CountReceiptsRequest.newBuilder()
+                .addAllStatuses(statuses).setWithRejectionOnly(withRejectionOnly);
+        if (from != null) request.setFrom(from.toString());
+        if (to != null) request.setTo(to.toString());
+        return GrpcCalls.call(() -> procurement.countReceipts(request.build())).getCount();
     }
 
     @Override
     public ReceiptTotals receiptTotals(Set<String> statuses) {
-        return totals(receipts.totals(statuses));
+        return totals(GrpcCalls.call(() -> procurement.receiptTotals(statuses(statuses))).getTotals());
     }
 
     @Override
     public Map<UUID, ReceiptTotals> receiptTotalsBySupplier(Set<String> statuses) {
         Map<UUID, ReceiptTotals> result = new LinkedHashMap<>();
-        receipts.totalsBySupplier(statuses).forEach((supplier, t) -> result.put(supplier, totals(t)));
+        GrpcCalls.call(() -> procurement.receiptTotalsBySupplier(statuses(statuses))).getBySupplierMap()
+                .forEach((supplier, t) -> result.put(ProtoValues.uuid(supplier), totals(t)));
         return result;
     }
 
-    private static ReceiptTotals totals(com.materia.backend.contexts.goodsReceipt.application.dtos.ReceiptTotals t) {
-        return new ReceiptTotals(t.receipts(), t.unitsReceived(), t.unitsAccepted(), t.unitsRejected(),
-                t.datedReceipts(), t.onTimeReceipts());
+    private static ReceiptTotals totals(com.materia.proto.procurement.v1.ReceiptTotals t) {
+        return new ReceiptTotals(t.getReceipts(), t.getUnitsReceived(), t.getUnitsAccepted(), t.getUnitsRejected(),
+                t.getDatedReceipts(), t.getOnTimeReceipts());
     }
 
     // ---- Invoices ----
 
     @Override
     public List<DueGroup> outstandingByDueDate(String type, Set<String> statuses, Rates rates) {
-        return invoices.outstandingByDueDate(type, statuses, reporting(rates)).stream()
-                .map(o -> new DueGroup(o.dueDate(), o.currency(), o.invoices(), o.outstanding()))
+        return GrpcCalls.call(() -> finance.outstandingByDueDate(OutstandingByDueDateRequest.newBuilder()
+                        .setType(type == null ? "" : type).addAllStatuses(statuses).setRates(rates(rates)).build()))
+                .getGroupsList().stream()
+                .map(o -> new DueGroup(o.hasDueDate() ? ProtoValues.date(o.getDueDate()) : null,
+                        o.getCurrency().isEmpty() ? null : o.getCurrency(), o.getInvoices(),
+                        ProtoValues.decimal(o.getOutstanding())))
                 .toList();
     }
 
     @Override
     public List<MonthAmount> invoicedByMonth(Set<String> excluded, Rates rates, LocalDate from, LocalDate to) {
-        return months(invoices.invoicedByMonth(excluded, reporting(rates), from, to));
+        return months(GrpcCalls.call(() -> finance.invoicedByMonth(InvoicedByMonthRequest.newBuilder()
+                .addAllExcludedStatuses(excluded).setRates(rates(rates)).setPeriod(MetricsProtos.period(from, to))
+                .build())));
     }
 
     // ---- Payments ----
 
     @Override
     public long countPayments(String status) {
-        return payments.countInStatus(status);
+        return GrpcCalls.call(() -> finance.countPaymentsInStatus(status(status))).getCount();
     }
 
     @Override
     public List<MonthAmount> paymentsByMonth(String status, Rates rates, LocalDate from, LocalDate to) {
-        return months(payments.byMonth(status, reporting(rates), from, to));
+        return months(GrpcCalls.call(() -> finance.paymentsByMonth(PaymentsByMonthRequest.newBuilder()
+                .setStatus(status == null ? "" : status).setRates(rates(rates))
+                .setPeriod(MetricsProtos.period(from, to)).build())));
     }
 
     // ---- Stock ----
 
     @Override
     public long countStockAlerts(boolean outOfStockOnly) {
-        return materials.countStockAlerts(outOfStockOnly);
+        return GrpcCalls.call(() -> masterData.countStockAlerts(
+                CountStockAlertsRequest.newBuilder().setOutOfStockOnly(outOfStockOnly).build())).getCount();
     }
 
     @Override
     public List<StockRow> stockAlerts(int limit) {
-        return materials.stockAlerts(limit).stream()
-                .map(a -> new StockRow(a.id(), a.code(), a.name(), a.currentStock(), a.reorderPoint(), a.safetyStock(),
-                        a.stockOnOrder(), a.unit()))
+        return GrpcCalls.call(() -> masterData.stockAlerts(StockAlertsRequest.newBuilder().setLimit(limit).build()))
+                .getAlertsList().stream()
+                .map(a -> new StockRow(ProtoValues.uuid(a.getId()), a.getCode().isEmpty() ? null : a.getCode(),
+                        a.getName().isEmpty() ? null : a.getName(), a.getCurrentStock(),
+                        a.hasReorderPoint() ? a.getReorderPoint() : null,
+                        a.hasSafetyStock() ? a.getSafetyStock() : null,
+                        a.getStockOnOrder(), a.hasUnit() ? a.getUnit() : null))
                 .toList();
     }
 
@@ -223,21 +275,22 @@ public class ModuleMetricsReadModel implements DashboardReadModel {
 
     @Override
     public long countReturns(String status) {
-        return returns.countInStatus(status);
+        return GrpcCalls.call(() -> procurement.countReturnsInStatus(status(status))).getCount();
     }
 
     // ---- Activity ----
 
     @Override
     public List<ActivityRow> latest(ActivitySource source, int limit) {
-        List<RecentDocument> documents = switch (source) {
-            case REQUISITION -> requisitions.latest(limit);
-            case PURCHASE_ORDER -> orders.latest(limit);
-            case GOODS_RECEIPT -> receipts.latest(limit);
-            case INVOICE -> invoices.latest(limit);
-            case PAYMENT -> payments.latest(limit);
-            case RETURN -> returns.latest(limit);
-        };
+        LatestRequest request = LatestRequest.newBuilder().setLimit(limit).build();
+        List<RecentDocument> documents = MetricsProtos.latest(GrpcCalls.call(() -> switch (source) {
+            case REQUISITION -> procurement.latestRequisitions(request);
+            case PURCHASE_ORDER -> procurement.latestOrders(request);
+            case GOODS_RECEIPT -> procurement.latestReceipts(request);
+            case INVOICE -> finance.latestInvoices(request);
+            case PAYMENT -> finance.latestPayments(request);
+            case RETURN -> procurement.latestReturns(request);
+        }));
         return documents.stream()
                 .map(d -> new ActivityRow(d.id(), d.code(), d.title(), d.status(), d.createdAt()))
                 .toList();

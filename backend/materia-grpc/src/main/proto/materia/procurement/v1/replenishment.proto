@@ -1,15 +1,20 @@
 syntax = "proto3";
 
-// Served by Procurement. The query half of purchaseRequisition's ReplenishmentUseCase; raising a replenishment
-// requisition is a write and travels as an event.
+// Served by Procurement. Mirrors purchaseRequisition's ReplenishmentUseCase.
+//
+// Raising a requisition is a command, the one write another service sends procurement by gRPC rather than as an
+// event: master data needs the new requisition's code at once (it records it on the reorder and tells the buyer).
+// A command is never retried automatically, so a requisition is never raised twice for one request.
 package materia.procurement.v1;
 
 option java_package = "com.materia.proto.procurement.v1";
 option java_multiple_files = true;
 
-// Callers: master data (reorder checks, so a material is not reordered twice).
+// Callers: master data (reorder checks and replenishment).
 service Replenishment {
   rpc HasOpenRequisitionFor(HasOpenRequisitionForRequest) returns (HasOpenRequisitionForResponse);
+  rpc RaiseReplenishment(RaiseReplenishmentRequest) returns (RaiseReplenishmentResponse);
+  rpc RaiseGroupedReplenishment(RaiseGroupedReplenishmentRequest) returns (RaiseReplenishmentResponse);
 }
 
 message HasOpenRequisitionForRequest {
@@ -20,4 +25,31 @@ message HasOpenRequisitionForRequest {
 
 message HasOpenRequisitionForResponse {
   bool open = 1;
+}
+
+// One material to replenish.
+message RaiseReplenishmentRequest {
+  // UUID
+  string material_id = 1;
+  int32 quantity = 2;
+  optional string reason = 3;
+  bool urgent = 4;
+  // The user it is raised for; absent for the nightly check
+  optional string requester_id = 5;
+}
+
+// Several materials of one supplier, in one requisition.
+message RaiseGroupedReplenishmentRequest {
+  optional string supplier_id = 1;
+  repeated Line lines = 2;
+
+  message Line {
+    string material_code = 1;
+    int32 quantity = 2;
+  }
+}
+
+message RaiseReplenishmentResponse {
+  // The new requisition's code (e.g. REQ-2026-00042); absent when none was raised
+  optional string requisition_id = 1;
 }

@@ -72,10 +72,11 @@ class GrpcContractsTest {
                         new Mirror(GoodsReceiptLookupUseCase.class,
                                 Map.of("findReceipt", "FindReceipt", "findReceiptsForOrder", "FindReceiptsForOrder")))),
                 Arguments.of(ReplenishmentGrpc.getServiceDescriptor(), List.of(
-                        new Mirror(ReplenishmentUseCase.class,
-                                Map.of("hasOpenRequisitionFor", "HasOpenRequisitionFor"),
-                                // Raising a requisition is a write: it becomes an event before master data leaves.
-                                Set.of("raiseReplenishment", "raiseGroupedReplenishment")))),
+                        new Mirror(ReplenishmentUseCase.class, Map.of(
+                                "hasOpenRequisitionFor", "HasOpenRequisitionFor",
+                                // A command, not an event: master data needs the new requisition's code at once.
+                                "raiseReplenishment", "RaiseReplenishment",
+                                "raiseGroupedReplenishment", "RaiseGroupedReplenishment")))),
                 Arguments.of(ProcurementMetricsGrpc.getServiceDescriptor(), List.of(
                         new Mirror(RequisitionMetricsUseCase.class,
                                 Map.of("countInStatus", "CountRequisitionsInStatus", "latest", "LatestRequisitions")),

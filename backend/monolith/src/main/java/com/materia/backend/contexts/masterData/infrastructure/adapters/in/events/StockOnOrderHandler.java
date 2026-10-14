@@ -5,7 +5,10 @@ import com.materia.backend.common.infrastructure.messaging.integration.Integrati
 import com.materia.backend.contexts.masterData.domain.ports.in.MaterialInventoryUseCase;
 import org.springframework.stereotype.Component;
 
-/** Keeps each material's stock on order from the purchase orders' {@code StockOnOrderChanged} events. */
+/**
+ * Keeps each material's stock on order from the purchase orders' {@code StockOnOrderChanged} events, and puts
+ * returned goods the supplier replaces back on order ({@code ReplacementPutOnOrder}, from returns to vendor).
+ */
 @Component
 public class StockOnOrderHandler implements IntegrationEventHandler {
 
@@ -22,12 +25,20 @@ public class StockOnOrderHandler implements IntegrationEventHandler {
 
     @Override
     public boolean handles(IntegrationEvent event) {
-        return event.is("purchaseOrder", "StockOnOrderChanged");
+        return event.is("purchaseOrder", "StockOnOrderChanged") || event.is("returnToVendor", "ReplacementPutOnOrder");
     }
 
     @Override
     public void handle(IntegrationEvent event) {
         var payload = event.payload();
+        if (event.is("returnToVendor", "ReplacementPutOnOrder")) {
+            int quantity = payload.path("quantity").asInt();
+            if (quantity > 0) {
+                materials.addStockOnOrder(EventFields.uuid(payload, "materialId"),
+                        EventFields.text(payload, "materialCode"), quantity, EventFields.text(payload, "userId"));
+            }
+            return;
+        }
         int change = payload.path("quantityChange").asInt();
         var materialId = EventFields.uuid(payload, "materialId");
         String materialCode = EventFields.text(payload, "materialCode");

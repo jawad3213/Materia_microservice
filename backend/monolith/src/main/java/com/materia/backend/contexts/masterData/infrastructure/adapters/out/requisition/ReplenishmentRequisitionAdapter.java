@@ -2,10 +2,11 @@ package com.materia.backend.contexts.masterData.infrastructure.adapters.out.requ
 
 import com.materia.backend.contexts.masterData.domain.entities.Material;
 import com.materia.backend.contexts.masterData.domain.ports.out.RequisitionRequests;
-import com.materia.backend.contexts.purchaseRequisition.application.dtos.ReplenishmentLineInput;
-import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.ReplenishmentUseCase;
 import com.materia.grpc.errors.GrpcCalls;
 import com.materia.proto.procurement.v1.HasOpenRequisitionForRequest;
+import com.materia.proto.procurement.v1.RaiseGroupedReplenishmentRequest;
+import com.materia.proto.procurement.v1.RaiseReplenishmentRequest;
+import com.materia.proto.procurement.v1.RaiseReplenishmentResponse;
 import com.materia.proto.procurement.v1.ReplenishmentGrpc;
 import org.springframework.stereotype.Component;
 
@@ -13,20 +14,17 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Asks procurement whether a material already has a requisition in progress (procurement.v1.Replenishment), and
- * raises replenishment requisitions through the requisition context's public use case: a write, which becomes an
- * event before master data leaves the monolith.
+ * Asks procurement whether a material already has a requisition in progress, and raises replenishment requisitions,
+ * through procurement.v1.Replenishment. Raising is a command: it is never retried, so one reorder never raises two
+ * requisitions.
  */
 @Component
 public class ReplenishmentRequisitionAdapter implements RequisitionRequests {
 
-    private final ReplenishmentUseCase replenishment;
-    private final ReplenishmentGrpc.ReplenishmentBlockingStub openRequisitions;
+    private final ReplenishmentGrpc.ReplenishmentBlockingStub replenishment;
 
-    public ReplenishmentRequisitionAdapter(ReplenishmentUseCase replenishment,
-                                           ReplenishmentGrpc.ReplenishmentBlockingStub openRequisitions) {
+    public ReplenishmentRequisitionAdapter(ReplenishmentGrpc.ReplenishmentBlockingStub replenishment) {
         this.replenishment = replenishment;
-        this.openRequisitions = openRequisitions;
     }
 
     @Override
@@ -37,14 +35,23 @@ public class ReplenishmentRequisitionAdapter implements RequisitionRequests {
     @Override
     public String createRequisitionFromReorder(Material material, int quantity, String reason, boolean isUrgent,
                                                String requesterId) {
-        return replenishment.raiseReplenishment(material.getId(), quantity, reason, isUrgent, requesterId);
+        RaiseReplenishmentRequest.Builder request = RaiseReplenishmentRequest.newBuilder()
+                .setQuantity(quantity)
+                .setUrgent(isUrgent);
+        if (material.getId() != null) request.setMaterialId(material.getId().toString());
+        if (reason != null) request.setReason(reason);
+        if (requesterId != null) request.setRequesterId(requesterId);
+        return requisitionId(GrpcCalls.call(() -> replenishment.raiseReplenishment(request.build())));
     }
 
     @Override
     public String createGroupedRequisition(String supplierId, List<ReorderLine> lines) {
-        return replenishment.raiseGroupedReplenishment(supplierId, lines.stream()
-                .map(line -> new ReplenishmentLineInput(line.materialCode(), line.quantity()))
-                .toList());
+        RaiseGroupedReplenishmentRequest.Builder request = RaiseGroupedReplenishmentRequest.newBuilder();
+        if (supplierId != null) request.setSupplierId(supplierId);
+        lines.forEach(line -> request.addLines(RaiseGroupedReplenishmentRequest.Line.newBuilder()
+                .setMaterialCode(line.materialCode() == null ? "" : line.materialCode())
+                .setQuantity(line.quantity())));
+        return requisitionId(GrpcCalls.call(() -> replenishment.raiseGroupedReplenishment(request.build())));
     }
 
     @Override
@@ -52,6 +59,10 @@ public class ReplenishmentRequisitionAdapter implements RequisitionRequests {
         HasOpenRequisitionForRequest.Builder request = HasOpenRequisitionForRequest.newBuilder();
         if (materialId != null) request.setMaterialId(materialId.toString());
         if (materialCode != null) request.setMaterialCode(materialCode);
-        return GrpcCalls.call(() -> openRequisitions.hasOpenRequisitionFor(request.build())).getOpen();
+        return GrpcCalls.call(() -> replenishment.hasOpenRequisitionFor(request.build())).getOpen();
+    }
+
+    private static String requisitionId(RaiseReplenishmentResponse response) {
+        return response.hasRequisitionId() ? response.getRequisitionId() : null;
     }
 }

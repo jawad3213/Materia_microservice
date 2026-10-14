@@ -162,6 +162,12 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- A real broker for the event pipeline test (KafkaEventsIT) -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
 
 
         <!-- ArchUnit: keeps the bounded contexts separable (ModuleBoundariesTest) -->

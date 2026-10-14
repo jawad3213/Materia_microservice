@@ -112,6 +112,48 @@ class ModuleBoundariesTest {
                         }
                     });
 
+    /** The service each context belongs to (docs/architecture/modular-monolith.md). */
+    private static final java.util.Map<String, String> SERVICE_OF = java.util.Map.ofEntries(
+            java.util.Map.entry("auth", "identity"),
+            java.util.Map.entry("employee", "identity"),
+            java.util.Map.entry("masterData", "masterdata"),
+            java.util.Map.entry("purchaseRequisition", "procurement"),
+            java.util.Map.entry("purchaseOrder", "procurement"),
+            java.util.Map.entry("goodsReceipt", "procurement"),
+            java.util.Map.entry("returnToVendor", "procurement"),
+            java.util.Map.entry("invoice", "finance"),
+            java.util.Map.entry("payment", "finance"),
+            java.util.Map.entry("settings", "finance"),
+            java.util.Map.entry("dashboard", "analytics"),
+            java.util.Map.entry("analytics", "analytics"));
+
+    /**
+     * Contexts of different services reach each other only through gRPC contracts and events, never through each
+     * other's classes. Dev seeders, which fill a local database, are the exception.
+     */
+    @ArchTest
+    static final ArchRule servicesUseNoOtherServicesClasses =
+            classes().should(new ArchCondition<JavaClass>("use no class of another service's contexts") {
+                @Override
+                public void check(JavaClass item, ConditionEvents events) {
+                    Optional<String> own = contextOf(item.getPackageName());
+                    if (own.isEmpty() || item.getPackageName().contains(".infrastructure.seed")) return;
+                    String ownService = SERVICE_OF.get(own.get());
+                    if (ownService == null) {
+                        events.add(SimpleConditionEvent.violated(item, own.get() + " belongs to no service"));
+                        return;
+                    }
+                    for (Dependency dependency : item.getDirectDependenciesFromSelf()) {
+                        contextOf(dependency.getTargetClass().getPackageName())
+                                .map(SERVICE_OF::get)
+                                .filter(service -> !service.equals(ownService))
+                                .ifPresent(service -> events.add(SimpleConditionEvent.violated(dependency,
+                                        dependency.getDescription() + " (" + ownService + " -> " + service
+                                                + "): call its gRPC contract or react to its events")));
+                    }
+                }
+            });
+
     private static Optional<String> contextOf(String packageName) {
         Matcher matcher = CONTEXT_PACKAGE.matcher(packageName);
         return matcher.matches() ? Optional.of(matcher.group(1)) : Optional.empty();

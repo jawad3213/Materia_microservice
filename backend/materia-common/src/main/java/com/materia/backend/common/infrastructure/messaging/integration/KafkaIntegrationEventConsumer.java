@@ -35,8 +35,12 @@ public class KafkaIntegrationEventConsumer {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Static, so the listener below can use it while this class is still being created (an instance factory method
+     * would be a circular reference, and the consumer would never start).
+     */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, String> integrationEventListenerFactory(
+    public static ConcurrentKafkaListenerContainerFactory<String, String> integrationEventListenerFactory(
             @Value("${spring.kafka.bootstrap-servers}") String bootstrapServers,
             @Value("${app.events.consumer-group:materia}") String groupId,
             @Value("${spring.kafka.listener.auto-startup:true}") boolean autoStartup) {
