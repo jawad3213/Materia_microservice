@@ -15,7 +15,7 @@ locals {
 
   # Repositories whose images this environment promotes (prod: staging's), same account and region
   promotion_source_repository_arns = var.promote_from_environment == "" ? [] : [
-    for service in ["backend", "frontend"] :
+    for service in ["backend", "gateway", "frontend"] :
     "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project}-${var.promote_from_environment}-${service}"
   ]
 

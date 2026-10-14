@@ -91,7 +91,7 @@ start() {
 
 report_images() {
   local service id image
-  for service in backend frontend; do
+  for service in backend gateway frontend; do
     id="$(docker compose ps -q "$service")"
     [ -n "$id" ] || continue
     image="$(docker inspect --format '{{.Image}}' "$id")"

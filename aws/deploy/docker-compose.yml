@@ -5,8 +5,8 @@
 # plus REGISTRY, PROJECT, ENVIRONMENT and IMAGE_TAG.
 #
 # Only the frontend publishes a port to the network: its nginx serves
-# the SPA and proxies /api to the backend. Backend and PostgreSQL stay
-# internal. Grafana and Prometheus listen on the host's loopback only:
+# the SPA and proxies /api to the gateway, which routes it to the
+# backend. Gateway, backend and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
 # reach them through an SSM port forward (see aws/README.md).
 # ===================================================================
 name: materia
@@ -63,13 +63,33 @@ services:
     logging: *logging
     networks: [internal]
 
+  # The API gateway: refuses invalid tokens, rate-limits, routes /api to the backend
+  gateway:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-gateway:${IMAGE_TAG}
+    restart: always
+    environment:
+      GATEWAY_BACKEND_URI: http://backend:8080
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    logging: *logging
+    networks: [internal]
+
   frontend:
     image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-frontend:${IMAGE_TAG}
     restart: always
     ports:
       - "80:80"
     depends_on:
-      backend:
+      gateway:
         condition: service_started
     logging: *logging
     networks: [internal]

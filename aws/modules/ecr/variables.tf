@@ -6,7 +6,7 @@ variable "name" {
 variable "repositories" {
   description = "Image names."
   type        = list(string)
-  default     = ["backend", "frontend"]
+  default     = ["backend", "gateway", "frontend"]
 }
 
 variable "keep_images" {

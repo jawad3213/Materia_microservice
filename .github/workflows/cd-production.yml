@@ -90,7 +90,7 @@ jobs:
           digest() { aws ecr describe-images --repository-name "$1" --image-ids imageTag="$IMAGE_TAG" \
                        --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true; }
           echo "### Promoted \`${IMAGE_TAG:0:12}\` from staging" >> "$GITHUB_STEP_SUMMARY"
-          for SERVICE in backend frontend; do
+          for SERVICE in backend gateway frontend; do
             SOURCE="$PROJECT-staging-$SERVICE"
             TARGET="$PROJECT-prod-$SERVICE"
             SOURCE_DIGEST=$(digest "$SOURCE")

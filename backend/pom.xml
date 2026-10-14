@@ -25,6 +25,8 @@
         <module>materia-grpc</module>
         <!-- Today's application: every context in one deployable, extracted service by service. -->
         <module>monolith</module>
+        <!-- The API gateway: the only way in from outside, in front of the services. -->
+        <module>gateway-service</module>
     </modules>
 
     <properties>

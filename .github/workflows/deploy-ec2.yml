@@ -85,7 +85,7 @@ jobs:
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          for SERVICE in backend frontend; do
+          for SERVICE in backend gateway frontend; do
             REPOSITORY="$PROJECT-$ENVIRONMENT-$SERVICE"
             if ! aws ecr describe-images --repository-name "$REPOSITORY" --image-ids imageTag="$IMAGE_TAG" >/dev/null; then
               echo "::error::$REPOSITORY:$IMAGE_TAG is not in ECR. Images are pushed by the CI workflow: let it finish on this commit first."

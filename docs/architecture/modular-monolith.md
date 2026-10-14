@@ -28,6 +28,29 @@ tables. The shared code names no context's table; each context plugs its own dat
 | FX valuation | A `SqlDocumentFxStore` per document type it owns (its table, amount and date). |
 | User names | `UserDisplayNames`, provided by identity (`AuthUserDisplayNames`). |
 
+## API gateway (`backend/gateway-service`)
+
+The only way in from outside: the frontend's nginx proxies `/api` (and the API docs) to the gateway, which routes
+them to the service that owns the path. Today every route leads to the monolith; each extracted service gets its own
+route by path prefix. Anything not routed (actuator, internal endpoints) answers 404.
+
+```
+browser ─▶ nginx (frontend) ─▶ gateway ─▶ backend (monolith) ─▶ PostgreSQL
+           sets X-Real-IP       trace id     verifies the token again,
+                                rate limit   checks the permission
+                                token check
+```
+
+| Filter | Does |
+|---|---|
+| `TraceIdFilter` | Gives every request an `X-Gateway-Trace-Id` (keeps the caller's when it is a safe value), on the request to the service and on the response. |
+| `RateLimitFilter` | 120 requests a minute per client, 10 for sign-in and password reset. The client is `X-Real-IP` (set by nginx). The monolith keeps its own limiter as a second line. |
+| `BearerTokenFilter` | Verifies a bearer token with Identity's JWK set (`/.well-known/jwks.json`, cached by Nimbus); refuses forged, expired and service tokens with 401 before any service sees them. A request without a token goes on: the service decides whether its path needs one. |
+
+Configuration: `GATEWAY_BACKEND_URI` (the monolith's address), `GATEWAY_JWKS_URI` (defaults to the backend's
+JWK set), `GATEWAY_RATE_LIMIT_*`. CORS stays in the monolith for now. In the browser the API is same-origin through
+nginx, so only the Vite dev server (calling the backend directly) needs it.
+
 ## One schema per service
 
 Each service's tables live in its own PostgreSQL schema (`V13__schema_per_service.sql`); the shared kernel's tables
@@ -60,12 +83,14 @@ the application with `./mvnw -pl monolith -am spring-boot:run`.
 |---|---|---|
 | `materia-common` | The shared kernel above (`com.materia.backend.common`). | Spring, JPA, Kafka |
 | `materia-grpc` | The contracts between services (`src/main/proto/materia/<service>/v1`), the stubs generated from them (`com.materia.proto.*`), and the interceptors every service installs (`com.materia.grpc.*`). | `materia-common`, grpc-java |
-| `monolith` | Every context and the gateway: today's deployable. Services leave it one at a time; what remains becomes the procurement service. | `materia-common` (and `materia-grpc` once gRPC is wired) |
+| `monolith` | Every context and the gateway: today's deployable. Services leave it one at a time; what remains becomes the procurement service. | `materia-common`, `materia-grpc` |
 
 ### gRPC contracts
 
-Each contract mirrors a public lookup use case and its view, field for field. Only reads cross services by gRPC;
-a change in another service (stock, replenishment requisitions) travels as an event.
+Each contract mirrors a public use case and its view, field for field. Reads cross services by gRPC; a change in
+another service travels as an event (stock on order, received goods, replaced goods). The one exception is raising a
+replenishment requisition: master data needs the new requisition's code at once, so it is a gRPC command, never
+retried automatically, so one reorder never raises two requisitions.
 
 | Contract (server) | Mirrors | Callers |
 |---|---|---|
@@ -73,7 +98,7 @@ a change in another service (stock, replenishment requisitions) travels as an ev
 | `masterdata.v1.MaterialCatalog` | the reads of `MaterialInventoryUseCase` | procurement |
 | `procurement.v1.PurchaseOrderLookup` | `PurchaseOrderLookupUseCase` | finance |
 | `procurement.v1.GoodsReceiptLookup` | `GoodsReceiptLookupUseCase` | finance |
-| `procurement.v1.Replenishment` | `ReplenishmentUseCase.hasOpenRequisitionFor` | master data |
+| `procurement.v1.Replenishment` | `ReplenishmentUseCase` (the open-requisition check, and the replenishment commands) | master data |
 | `procurement.v1.ProcurementMetrics` | `RequisitionMetricsUseCase`, `PurchaseOrderMetricsUseCase`, `GoodsReceiptMetricsUseCase`, `ReturnMetricsUseCase` | analytics |
 | `finance.v1.FinanceMetrics` | `InvoiceMetricsUseCase`, `PaymentMetricsUseCase` | analytics |
 | `masterdata.v1.MasterDataMetrics` | `MaterialMetricsUseCase` | analytics |
@@ -92,7 +117,7 @@ Interceptors every service installs (`materia-grpc`):
 |---|---|---|
 | Client | `CallerTokenClientInterceptor` | Sends the user's token, so the called service applies that user's rights. |
 | Client | `TraceIdClientInterceptor` | Sends the trace id of the request being served. |
-| Client | `DefaultDeadlineClientInterceptor` | Gives a call without a deadline a default one. |
+| Client | `DefaultDeadlineClientInterceptor` | Gives a call without a deadline a default one: 30 s in process (`app.grpc.client.deadline`; the call runs on the caller's thread, so a deadline cannot stop it early), a few seconds on the network channels of extracted services. |
 | Server | `AuthenticationServerInterceptor` | Refuses a call without a valid token (`UNAUTHENTICATED`) and exposes the caller (`GrpcCaller`). |
 | Server | `TraceIdServerInterceptor` | Logs the call under the caller's trace id. |
 | Server | `ExceptionTranslatingServerInterceptor` | Turns the shared exceptions into status codes; `GrpcErrors.toException` turns them back on the client. |
@@ -109,18 +134,30 @@ Interceptors every service installs (`materia-grpc`):
 4. **A Spring listener (`@EventListener`, `@TransactionalEventListener`) only handles its own context's events.**
    Another context's events are handled by an `IntegrationEventHandler` on their JSON payload, as they will be when
    they arrive from another service.
+5. **Contexts of different services use none of each other's classes** (`ModuleBoundariesTest`): they call each
+   other's gRPC contracts and react to each other's events. Contexts of one service (the four of procurement, invoice
+   and payment) still use each other's public API directly. Dev seeders are the exception.
 
-## How a cross-context call is wired
+## How a call between services is wired
 
 ```
-goodsReceipt.application.GoodsReceiptService
-   └─ OrderedGoods                     (goodsReceipt/domain/ports/out, GR-owned records)
-        └─ PurchaseOrderGoodsAdapter   (goodsReceipt/infrastructure/adapters/out/purchaseOrder)
-             └─ PurchaseOrderLookupUseCase / PurchaseOrderReceivingUseCase   (purchaseOrder public API)
+invoice.application.InvoiceService                        (finance)
+   └─ InvoicedOrders                    (invoice/domain/ports/out, invoice-owned records)
+        └─ ProcurementInvoicedOrders    (invoice/infrastructure/adapters/out/procurement)
+             └─ PurchaseOrderLookupBlockingStub          (procurement.v1, materia-grpc)
+                  ╎ in-process gRPC channel, interceptors (GrpcConfig)
+             PurchaseOrderLookupGrpcService               (purchaseOrder/infrastructure/adapters/in/grpc)
+                  └─ PurchaseOrderLookupUseCase           (procurement)
 ```
 
-To extract a service, replace the adapter's body with a gRPC client (or an event consumer); the service and its
-tests do not change.
+Inside the monolith the server and channel are in process and run the call on the caller's thread, so it joins the
+caller's transaction as the direct call it replaced did. Extracting a service changes the channel's address; the
+adapter, the service and their tests do not change. Tests reach other services the same way
+(`support/fixtures/InProcessGrpc`, used by `CrossContextWiring`).
+
+A call carries the caller's token: the one of the gRPC call being served, else the signed-in user's (kept by the
+gateway's JWT filter in a `BearerTokenAuthentication`), else a service token (`subject = service:monolith`,
+`ROLE_SERVICE`) for work no user started. The REST API refuses service tokens.
 
 Public lookups added for this purpose:
 
@@ -159,6 +196,9 @@ mocked repositories, so service tests keep stubbing what they always did.
   `app.events.in-process.enabled=false` and receives only from Kafka. Tests use `app.events.in-process.mode=immediate`
   (inside the test transaction); `IntegrationEventsIT` and `ReceiptStockEventsIT` check the after-commit delivery.
 - Events must stay plain data (strings, numbers, ids, enums): they are serialized to JSON.
+- `KafkaEventsIT` runs the whole pipeline against a real broker (Testcontainers): commit, outbox, relay, topic,
+  consumer, handler. The local Docker Compose stack runs with Kafka (`APP_MESSAGING_TYPE=kafka`,
+  `APP_OUTBOX_RELAY_ENABLED=true`); the AWS stack has no broker yet and stays in process.
 
 ### Procurement and master data
 
@@ -169,9 +209,10 @@ Procurement changes stock only through events; master data applies them:
 | `StockOnOrderChanged` (purchaseOrder) | `StockOnOrderHandler` (masterData) | Adds or releases stock on order. |
 | `GoodsReceiptLineReceived` (goodsReceipt) | `ReceivedGoodsStockHandler` (masterData) | Accepted goods enter stock; the received quantity leaves stock on order. |
 | `ReceiptStockApplied` (masterData) | `ReceiptStockLevelsHandler` (goodsReceipt) | The receipt line records the stock before and after. |
+| `ReplacementPutOnOrder` (returnToVendor) | `StockOnOrderHandler` (masterData) | Returned goods the supplier replaces are on order again. |
 
-Procurement still reads master data synchronously (material lookups, which become gRPC calls), and master data
-raises replenishment requisitions in procurement (one direction). No transaction spans the two.
+Procurement reads master data synchronously (material lookups, `masterdata.v1.MaterialCatalog`), and master data
+raises replenishment requisitions in procurement with a command (`procurement.v1.Replenishment`, one direction).
 
 ## Not done yet
 
@@ -180,9 +221,8 @@ raises replenishment requisitions in procurement (one direction). No transaction
   services and their tests do not change.
 - `RequisitionOutput.getLines()` still exposes requisition entities to the requisition web layer; other
   contexts must use `getLineSummaries()`.
-- **Writes that still cross services synchronously.** Returned goods go back on order through
-  `MaterialInventoryUseCase.addStockOnOrder` (`ProcurementReturnSources`), and master data raises replenishment
-  requisitions through `ReplenishmentUseCase.raise*`. Both become events before their services are split.
+- **Authorisation per RPC.** A gRPC call needs a valid token, but any authenticated caller may call any RPC; the
+  REST API enforces the permissions today. Check them per RPC before a service is reachable from the network.
 - **The dashboard's metrics** cross services through 32 fine-grained RPCs. When analytics is extracted, measure how
   many a dashboard load makes; an event-fed read model in analytics can replace the hottest ones.
 - **Dev seeders** call other contexts directly; each service will seed its own data.
