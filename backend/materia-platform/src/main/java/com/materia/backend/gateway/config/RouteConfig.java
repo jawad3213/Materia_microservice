@@ -1,6 +1,5 @@
 package com.materia.backend.gateway.config;
 
-import com.materia.backend.contexts.auth.domain.enums.Role;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.Arrays;
@@ -32,13 +31,18 @@ public class RouteConfig {
             List<String> allowedRoles
     ) {}
 
+    /** The role codes of identity's Role enum; RoleCodesTest (identity) keeps them in step with it. */
+    public static final String ADMIN = "ADMIN";
+    public static final String PURCHASER = "PURCHASER";
+    public static final String RECEIVER = "RECEIVER";
+
     /**
-     * Builds the authority names for the given roles, in the exact "ROLE_&lt;CODE&gt;" form that
-     * AuthService puts into the JWT. Derived from the Role enum so the two can never drift apart.
+     * Builds the authority names for the given role codes, in the exact "ROLE_&lt;CODE&gt;" form that
+     * AuthService puts into the JWT.
      */
-    private static List<String> authorities(Role... roles) {
-        return Arrays.stream(roles)
-                .map(role -> "ROLE_" + role.getCode())
+    private static List<String> authorities(String... roleCodes) {
+        return Arrays.stream(roleCodes)
+                .map(code -> "ROLE_" + code)
                 .collect(Collectors.toUnmodifiableList());
     }
 
@@ -62,7 +66,7 @@ public class RouteConfig {
                 "/api/v1/masterdata/**",
                 "Master data, suppliers, currencies, and reference entities",
                 true,
-                authorities(Role.ADMIN, Role.PURCHASER, Role.RECEIVER)
+                authorities(ADMIN, PURCHASER, RECEIVER)
         ));
 
         // 3. Purchase Requisition Module
@@ -71,7 +75,7 @@ public class RouteConfig {
                 "/api/v1/purchase-requisitions/**",
                 "Internal purchase requisitions and approvals",
                 true,
-                authorities(Role.ADMIN, Role.PURCHASER, Role.RECEIVER)
+                authorities(ADMIN, PURCHASER, RECEIVER)
         ));
 
         // 4. Purchase Order Module
@@ -80,7 +84,7 @@ public class RouteConfig {
                 "/api/v1/purchase-orders/**",
                 "Purchase orders management and lifecycle",
                 true,
-                authorities(Role.ADMIN, Role.PURCHASER, Role.RECEIVER)
+                authorities(ADMIN, PURCHASER, RECEIVER)
         ));
 
         // 5. Goods Receipt Module
@@ -89,7 +93,7 @@ public class RouteConfig {
                 "/api/v1/goods-receipts/**",
                 "Warehouse receipts and inventory inspection",
                 true,
-                authorities(Role.ADMIN, Role.PURCHASER, Role.RECEIVER)
+                authorities(ADMIN, PURCHASER, RECEIVER)
         ));
 
         // 6. Invoice Module
@@ -98,7 +102,7 @@ public class RouteConfig {
                 "/api/v1/invoices/**",
                 "Supplier invoices, matching, and validations",
                 true,
-                authorities(Role.ADMIN, Role.PURCHASER)
+                authorities(ADMIN, PURCHASER)
         ));
 
         // 7. Payment Module
@@ -107,7 +111,7 @@ public class RouteConfig {
                 "/api/v1/payments/**",
                 "Payment processing and reconciliation",
                 true,
-                authorities(Role.ADMIN, Role.PURCHASER)
+                authorities(ADMIN, PURCHASER)
         ));
 
         // 8. Return To Vendor Module
@@ -116,7 +120,7 @@ public class RouteConfig {
                 "/api/v1/return-to-vendors/**",
                 "Merchandise returns and vendor claims",
                 true,
-                authorities(Role.ADMIN, Role.PURCHASER, Role.RECEIVER)
+                authorities(ADMIN, PURCHASER, RECEIVER)
         ));
 
         // 9. Analytics Service
@@ -125,7 +129,7 @@ public class RouteConfig {
                 "/api/v1/analytics/**",
                 "Business metrics, KPI dashboards, and reporting",
                 true,
-                authorities(Role.ADMIN, Role.PURCHASER, Role.RECEIVER)
+                authorities(ADMIN, PURCHASER, RECEIVER)
         ));
 
         // 10. Notification Service
@@ -143,7 +147,7 @@ public class RouteConfig {
                 "/api/v1/employees/**",
                 "Employee records, organizational structure, onboarding, and offboarding",
                 true,
-                authorities(Role.ADMIN)
+                authorities(ADMIN)
         ));
 
         ROUTES = Collections.unmodifiableMap(map);

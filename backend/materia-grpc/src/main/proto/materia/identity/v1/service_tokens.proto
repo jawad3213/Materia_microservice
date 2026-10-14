@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+// Served by Identity: the only signer of tokens. A service exchanges its client credentials for a short-lived
+// service token (OAuth2 client-credentials style), which it sends on the calls it makes for work no user started
+// (scheduled jobs, event handlers, start-up). No other service holds the signing key.
+package materia.identity.v1;
+
+option java_package = "com.materia.proto.identity.v1";
+option java_multiple_files = true;
+
+// The one RPC callable without a token: it is how a service gets one.
+service ServiceTokens {
+  rpc IssueServiceToken(IssueServiceTokenRequest) returns (IssueServiceTokenResponse);
+}
+
+message IssueServiceTokenRequest {
+  // The calling service, e.g. "monolith"
+  string client_id = 1;
+  string client_secret = 2;
+}
+
+message IssueServiceTokenResponse {
+  // RS256 JWT: subject service:<client_id>, role ROLE_SERVICE, claim svc=true
+  string token = 1;
+  int64 expires_in_seconds = 2;
+}

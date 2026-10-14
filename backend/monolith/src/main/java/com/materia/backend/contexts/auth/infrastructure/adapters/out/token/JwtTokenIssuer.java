@@ -33,4 +33,14 @@ public class JwtTokenIssuer implements TokenIssuer {
     public String hashToken(String rawToken) {
         return jwtTokenProvider.hashToken(rawToken);
     }
+
+    @Override
+    public String generateServiceToken(String serviceName) {
+        return jwtTokenProvider.generateServiceToken(serviceName);
+    }
+
+    @Override
+    public long tokenLifetimeSeconds() {
+        return jwtTokenProvider.accessExpirationMs() / 1000;
+    }
 }

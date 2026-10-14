@@ -16,4 +16,10 @@ public interface TokenIssuer {
 
     /** The stored form of a refresh or reset token. */
     String hashToken(String rawToken);
+
+    /** A signed token for a service's own work (no user), with the service role; refused by the REST API. */
+    String generateServiceToken(String serviceName);
+
+    /** How long a token issued now stays valid. */
+    long tokenLifetimeSeconds();
 }

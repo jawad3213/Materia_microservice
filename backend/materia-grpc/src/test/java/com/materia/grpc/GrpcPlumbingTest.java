@@ -151,6 +151,27 @@ class GrpcPlumbingTest {
     }
 
     @Test
+    @DisplayName("grpc: a method listed as public is reachable without a token; the others still are not")
+    void publicMethod_needsNoToken() throws Exception {
+        String name = InProcessServerBuilder.generateName();
+        AuthenticationServerInterceptor authentication = new AuthenticationServerInterceptor(token -> Optional.empty(),
+                java.util.Set.of(PurchaseOrderLookupGrpc.getFindOrderMethod().getFullMethodName()));
+        Server open = InProcessServerBuilder.forName(name)
+                .addService(ServerInterceptors.intercept(service, authentication))
+                .build().start();
+        ManagedChannel anonymous = InProcessChannelBuilder.forName(name).build();
+        try {
+            FindOrderResponse response = PurchaseOrderLookupGrpc.newBlockingStub(anonymous)
+                    .findOrder(FindOrderRequest.newBuilder().setPurchaseOrderId("8b0e5c1e").build());
+            assertThat(response.getOrder().getOrderCode()).isEqualTo("PO-2026-00001");
+            assertThat(seenCaller.get()).isNull();
+        } finally {
+            anonymous.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+            open.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
     @DisplayName("grpc: an invalid token, or a verifier that fails, is refused (UNAUTHENTICATED)")
     void invalidToken_isRefused() {
         clientToken.set("forged");

@@ -23,6 +23,8 @@
         <module>materia-common</module>
         <!-- gRPC contracts between the services (.proto), their generated stubs, and the interceptors they share. -->
         <module>materia-grpc</module>
+        <!-- What every service runs on: security chain, error handling, token keys, database and Kafka setup. -->
+        <module>materia-platform</module>
         <!-- Today's application: every context in one deployable, extracted service by service. -->
         <module>monolith</module>
         <!-- The API gateway: the only way in from outside, in front of the services. -->
@@ -64,6 +66,11 @@
             <dependency>
                 <groupId>com.materia</groupId>
                 <artifactId>materia-grpc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.materia</groupId>
+                <artifactId>materia-platform</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <!-- Brought in by kafka-clients; 1.11.4 fixes a HIGH vulnerability of 1.10.1. -->

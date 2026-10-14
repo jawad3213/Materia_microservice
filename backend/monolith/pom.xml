@@ -24,6 +24,11 @@
             <groupId>com.materia</groupId>
             <artifactId>materia-common</artifactId>
         </dependency>
+        <!-- What every service runs on (security chain, error handling, token keys, database and Kafka setup) -->
+        <dependency>
+            <groupId>com.materia</groupId>
+            <artifactId>materia-platform</artifactId>
+        </dependency>
 
         <!--
           The contracts between the future services. Inside this application they travel over the in-process

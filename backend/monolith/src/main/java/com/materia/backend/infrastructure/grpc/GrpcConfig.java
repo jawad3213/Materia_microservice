@@ -8,6 +8,7 @@ import com.materia.grpc.errors.ExceptionTranslatingServerInterceptor;
 import com.materia.grpc.trace.TraceIdClientInterceptor;
 import com.materia.grpc.trace.TraceIdServerInterceptor;
 import com.materia.proto.finance.v1.FinanceMetricsGrpc;
+import com.materia.proto.identity.v1.ServiceTokensGrpc;
 import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
@@ -21,15 +22,18 @@ import io.grpc.Server;
 import io.grpc.ServerInterceptors;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -51,14 +55,36 @@ public class GrpcConfig {
     @Bean
     public InProcessGrpcServer grpcServer(List<BindableService> services, TokenVerifier verifier) {
         InProcessServerBuilder server = InProcessServerBuilder.forName(serverName).directExecutor();
-        AuthenticationServerInterceptor authentication = new AuthenticationServerInterceptor(verifier);
+        // Issuing a service token is the one call made without a token.
+        AuthenticationServerInterceptor authentication = new AuthenticationServerInterceptor(verifier,
+                Set.of(ServiceTokensGrpc.getIssueServiceTokenMethod().getFullMethodName()));
         // The last interceptor runs first: trace id, then authentication, then error translation around the handler.
         services.forEach(service -> server.addService(ServerInterceptors.intercept(service,
                 new ExceptionTranslatingServerInterceptor(), authentication, new TraceIdServerInterceptor())));
         return new InProcessGrpcServer(server.build());
     }
 
+    /**
+     * The channel to identity's ServiceTokens, without the caller-token interceptor: asking for a service token must
+     * not need one.
+     */
     @Bean(destroyMethod = "shutdownNow")
+    public ManagedChannel serviceTokenChannel(@Value("${app.grpc.client.deadline:30s}") Duration deadline) {
+        return InProcessChannelBuilder.forName(serverName)
+                .directExecutor()
+                .intercept(new TraceIdClientInterceptor(), new DefaultDeadlineClientInterceptor(deadline))
+                .build();
+    }
+
+    @Bean
+    public OutgoingCallerToken outgoingCallerToken(@Qualifier("serviceTokenChannel") ManagedChannel serviceTokenChannel,
+                                                   @Value("${app.service-client.id}") String clientId,
+                                                   @Value("${app.service-client.secret}") String clientSecret) {
+        return new OutgoingCallerToken(ServiceTokensGrpc.newBlockingStub(serviceTokenChannel), clientId, clientSecret);
+    }
+
+    @Bean(destroyMethod = "shutdownNow")
+    @Primary
     public ManagedChannel grpcChannel(OutgoingCallerToken tokens,
                                       @Value("${app.grpc.client.deadline:30s}") Duration deadline) {
         return InProcessChannelBuilder.forName(serverName)
