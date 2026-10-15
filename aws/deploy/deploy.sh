@@ -130,7 +130,7 @@ report_images() {
 
 [ -f .bootstrapped ] || { log "Host bootstrap has not finished yet"; exit 1; }
 
-# Attachment files: owned by the services' container user (uid 10001, see backend/monolith/Dockerfile). Finance keeps
+# Attachment files: owned by the services' container user (uid 10001, see backend/procurement-service/Dockerfile). Finance keeps
 # its own (invoice scans); the ones stored with procurement's before one database per service are copied over once.
 install -d -m 750 -o 10001 -g 10001 /data/attachments
 install -d -m 750 -o 10001 -g 10001 /data/finance-attachments

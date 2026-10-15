@@ -14,7 +14,7 @@ import java.io.UncheckedIOException;
 
 /**
  * Procurement's stand-in for finance's tests: procurement.v1 (PurchaseOrderLookup, GoodsReceiptLookup) on the
- * in-process server {@value #SERVER_NAME}, which {@code app.grpc.monolith.target} points at, over the orders and
+ * in-process server {@value #SERVER_NAME}, which {@code app.grpc.procurement.target} points at, over the orders and
  * receipts tests register ({@link #save}).
  *
  * <p>One server for the JVM, shared by every test context, so orders outlive a test's rollback: give each test its own

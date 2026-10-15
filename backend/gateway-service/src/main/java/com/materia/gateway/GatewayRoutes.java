@@ -11,12 +11,12 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
  * What the gateway exposes. Everything else (actuator, internal endpoints) answers 404 here: only the REST API, its
  * documentation and Identity's public key are reachable from outside.
  *
- * <p>An extracted service gets its own routes by path prefix, checked before the monolith's catch-all: Identity
+ * <p>An extracted service gets its own routes by path prefix, checked before procurement's catch-all: Identity
  * answers /api/v1/auth, /api/v1/employees, the history of its own records (User, Employee) and its public key; master
  * data /api/v1/masterdata and the history of its records (Material, Supplier, Category); finance /api/v1/invoices,
  * /api/v1/payments, /api/v1/settings, the history of its records (Invoice, Payment, Setting) and the attachments of
  * invoices (every attachment request names its owner type: {@code ownerType=INVOICE}); analytics /api/v1/dashboard;
- * the monolith the rest of the API and its docs.
+ * procurement the rest of the API and its docs.
  */
 @Configuration
 public class GatewayRoutes {
@@ -44,9 +44,9 @@ public class GatewayRoutes {
                 .route("analytics", route -> route.order(-1)
                         .path("/api/v1/dashboard", "/api/v1/dashboard/**")
                         .uri(gateway.analyticsUri()))
-                .route("api", route -> route.path("/api/**").uri(gateway.backendUri()))
+                .route("api", route -> route.path("/api/**").uri(gateway.procurementUri()))
                 .route("api-docs", route -> route.path("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**")
-                        .uri(gateway.backendUri()))
+                        .uri(gateway.procurementUri()))
                 .build();
     }
 

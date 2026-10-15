@@ -22,7 +22,7 @@ import java.util.Map;
 /**
  * Loads the properties of the .env file into the Spring Environment and the System properties.
  *
- * <p>Called by {@code Backend2Application.main()} only. It is deliberately not registered as a post-processor, so
+ * <p>Called by {@code ProcurementServiceApplication.main()} only. It is deliberately not registered as a post-processor, so
  * that tests never read a developer's .env (see {@code HermeticEnvironmentTest}).
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)

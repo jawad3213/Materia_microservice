@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <p>A developer's .env never reaches the test context: {@code DotenvEnvironmentPostProcessor} is
  * deliberately not registered as a post-processor (FINDING-009), so the .env file is loaded only by
- * {@code Backend2Application.main()}, which tests never call.
+ * {@code ProcurementServiceApplication.main()}, which tests never call.
  *
  * <p>If someone registers it (in {@code META-INF/spring.factories}), .env would load at highest
  * precedence in every test, could activate the dev profile, and could point the suite at a real

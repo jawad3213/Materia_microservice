@@ -18,13 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * [T015] The shared action matrix (who may do what to purchase orders and goods receipts) names exactly the roles of
- * {@link Role}, with their permissions. The matrix lives with the monolith's tests, which check its rules; the frontend
+ * {@link Role}, with their permissions. The matrix lives with procurement's tests, which check its rules; the frontend
  * reads the same file (SC-002a).
  */
 class RoleActionMatrixTest {
 
     /** From this module's directory, where the tests run. */
-    private static final Path MATRIX = Path.of("..", "monolith", "src", "test", "resources", "contracts",
+    private static final Path MATRIX = Path.of("..", "procurement-service", "src", "test", "resources", "contracts",
             "purchase-order-actions.json");
 
     private static JsonNode roles;

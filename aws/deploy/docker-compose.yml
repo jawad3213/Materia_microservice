@@ -6,7 +6,7 @@
 #
 # Only the frontend publishes a port to the network: its nginx serves
 # the SPA and proxies /api to the gateway, which routes it to identity,
-# master data, finance, analytics or the backend. Gateway, services, Kafka and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
+# master data, finance, analytics or procurement (the "backend" service). Gateway, services, Kafka and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
 # reach them through an SSM port forward (see aws/README.md).
 # ===================================================================
 name: materia
@@ -61,6 +61,10 @@ services:
     logging: *logging
     networks: [internal]
 
+  # Procurement (backend/procurement-service). Still "backend" here and in ECR: renaming the service or its
+  # repository changes the deployed stack and the images a rollback redeploys, so it is a step of its own.
+  # Its service client id is the image's own default ("procurement"; "monolith" before the rename), so a
+  # rollback to an older image keeps the id the older identity knows.
   backend:
     image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-backend:${IMAGE_TAG}
     restart: always
@@ -73,7 +77,6 @@ services:
       APP_ATTACHMENTS_DIR: /data/attachments
       # Identity alone signs tokens: this service verifies them, and asks identity for its own service tokens.
       JWT_PRIVATE_KEY: ""
-      SERVICE_CLIENT_ID: monolith
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_MASTERDATA_TARGET: masterdata:9092
       # Its outbox relay publishes its own events to Kafka (every service relays its own outbox).
@@ -160,7 +163,8 @@ services:
       SPRING_KAFKA_LISTENER_AUTO_STARTUP: "true"
       JWT_PRIVATE_KEY: ""
       GRPC_IDENTITY_TARGET: identity:9091
-      GRPC_MONOLITH_TARGET: backend:9090
+      GRPC_PROCUREMENT_TARGET: backend:9090
+      GRPC_MONOLITH_TARGET: backend:9090 # read by images before the rename; drop after the next release
       SPRINGDOC_INFO_TITLE: Materia Master Data API
       MANAGEMENT_SERVER_PORT: "8081"
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
@@ -202,7 +206,8 @@ services:
       SPRING_KAFKA_LISTENER_AUTO_STARTUP: "true"
       JWT_PRIVATE_KEY: ""
       GRPC_IDENTITY_TARGET: identity:9091
-      GRPC_MONOLITH_TARGET: backend:9090
+      GRPC_PROCUREMENT_TARGET: backend:9090
+      GRPC_MONOLITH_TARGET: backend:9090 # read by images before the rename; drop after the next release
       APP_ATTACHMENTS_DIR: /data/finance-attachments
       SPRINGDOC_INFO_TITLE: Materia Finance API
       MANAGEMENT_SERVER_PORT: "8081"
@@ -242,7 +247,8 @@ services:
       APP_OUTBOX_RELAY_ENABLED: "false"
       JWT_PRIVATE_KEY: ""
       GRPC_IDENTITY_TARGET: identity:9091
-      GRPC_MONOLITH_TARGET: backend:9090
+      GRPC_PROCUREMENT_TARGET: backend:9090
+      GRPC_MONOLITH_TARGET: backend:9090 # read by images before the rename; drop after the next release
       GRPC_MASTERDATA_TARGET: masterdata:9092
       GRPC_FINANCE_TARGET: finance:9093
       SPRINGDOC_INFO_TITLE: Materia Analytics API
@@ -269,7 +275,8 @@ services:
     image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-gateway:${IMAGE_TAG}
     restart: always
     environment:
-      GATEWAY_BACKEND_URI: http://backend:8080
+      GATEWAY_PROCUREMENT_URI: http://backend:8080
+      GATEWAY_BACKEND_URI: http://backend:8080 # read by images before the rename; drop after the next release
       GATEWAY_IDENTITY_URI: http://identity:8082
       GATEWAY_MASTERDATA_URI: http://masterdata:8083
       GATEWAY_FINANCE_URI: http://finance:8084

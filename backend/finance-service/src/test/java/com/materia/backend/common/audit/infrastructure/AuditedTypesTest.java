@@ -22,6 +22,6 @@ class AuditedTypesTest {
         assertEquals(Optional.of(Optional.of("setting:read")), AuditedTypes.readPermissionOf("Setting"));
         assertTrue(AuditedTypes.readPermissionOf("InvoiceLine").isEmpty(), "lines are read with their document");
         assertTrue(AuditedTypes.readPermissionOf("Employee").isEmpty(), "identity's records");
-        assertTrue(AuditedTypes.readPermissionOf("PurchaseOrder").isEmpty(), "the monolith's records");
+        assertTrue(AuditedTypes.readPermissionOf("PurchaseOrder").isEmpty(), "procurement's records");
     }
 }

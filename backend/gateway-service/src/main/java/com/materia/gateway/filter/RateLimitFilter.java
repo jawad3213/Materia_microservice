@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * A per-client budget of requests per window: 120 a minute for the API, 10 for the credential endpoints, whose
- * guessing would otherwise go unthrottled. Same rules as the monolith's limiter, which stays as a second line.
+ * guessing would otherwise go unthrottled. Same rules as procurement's limiter, which stays as a second line.
  *
  * <p>The client is the address nginx saw ({@code X-Real-IP}, which it overwrites), else the last
  * {@code X-Forwarded-For} hop, written by the nearest proxy, else the connection's address. The first
@@ -56,7 +56,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         return chain.filter(exchange);
     }
 
-    /** The other sign-in routes, the API docs and the public key: not counted, like in the monolith. */
+    /** The other sign-in routes, the API docs and the public key: not counted, like in procurement. */
     private static boolean isPublic(String path) {
         return path.startsWith("/api/v1/auth/") || path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")
                 || path.equals("/.well-known/jwks.json");

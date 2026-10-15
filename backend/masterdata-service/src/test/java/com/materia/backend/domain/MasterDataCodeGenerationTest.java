@@ -15,7 +15,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Master data's year-based codes (materials, suppliers, categories); the monolith's documents have their own test. */
+/** Master data's year-based codes (materials, suppliers, categories); procurement's documents have their own test. */
 class MasterDataCodeGenerationTest {
 
     private static class InMemoryCodeSequenceRepository implements CodeSequenceRepository {

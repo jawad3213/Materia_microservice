@@ -7,11 +7,11 @@ import org.springframework.retry.annotation.EnableRetry;
 
 @SpringBootApplication
 @EnableRetry
-public class Backend2Application {
+public class ProcurementServiceApplication {
 
     public static void main(String[] args) {
         com.materia.backend.infrastructure.config.DotenvEnvironmentPostProcessor.loadEnv(null);
-        SpringApplication.run(Backend2Application.class, args);
+        SpringApplication.run(ProcurementServiceApplication.class, args);
     }
 
 }   

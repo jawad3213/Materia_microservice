@@ -14,7 +14,7 @@ service ServiceTokens {
 }
 
 message IssueServiceTokenRequest {
-  // The calling service, e.g. "monolith"
+  // The calling service, e.g. "procurement"
   string client_id = 1;
   string client_secret = 2;
 }

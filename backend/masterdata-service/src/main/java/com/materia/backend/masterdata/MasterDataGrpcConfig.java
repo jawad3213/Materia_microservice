@@ -21,8 +21,8 @@ import java.util.Set;
 
 /**
  * Master data's gRPC: it serves masterdata.v1 (MaterialCatalog, MasterDataMetrics) on {@code app.grpc.server.port},
- * and raises replenishment requisitions in procurement (procurement.v1.Replenishment, today in the monolith at
- * {@code app.grpc.monolith.target}). Identity's contracts are wired by the platform (IdentityClientConfig).
+ * and raises replenishment requisitions in procurement (procurement.v1.Replenishment, at
+ * {@code app.grpc.procurement.target}). Identity's contracts are wired by the platform (IdentityClientConfig).
  */
 @Configuration
 public class MasterDataGrpcConfig {
@@ -34,16 +34,16 @@ public class MasterDataGrpcConfig {
     }
 
     @Bean(destroyMethod = "shutdownNow")
-    public ManagedChannel monolithChannel(OutgoingCallerToken tokens,
-                                          @Value("${app.grpc.monolith.target}") String target,
-                                          @Value("${app.grpc.monolith.deadline:10s}") Duration deadline) {
+    public ManagedChannel procurementChannel(OutgoingCallerToken tokens,
+                                          @Value("${app.grpc.procurement.target}") String target,
+                                          @Value("${app.grpc.procurement.deadline:10s}") Duration deadline) {
         return GrpcChannels.to(target, new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
                 new DefaultDeadlineClientInterceptor(deadline));
     }
 
     @Bean
     public ReplenishmentGrpc.ReplenishmentBlockingStub replenishmentStub(
-            @Qualifier("monolithChannel") ManagedChannel monolithChannel) {
-        return ReplenishmentGrpc.newBlockingStub(monolithChannel);
+            @Qualifier("procurementChannel") ManagedChannel procurementChannel) {
+        return ReplenishmentGrpc.newBlockingStub(procurementChannel);
     }
 }
