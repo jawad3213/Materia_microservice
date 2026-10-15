@@ -1,5 +1,6 @@
 package com.materia.backend.analytics;
 
+import com.materia.backend.infrastructure.grpc.CallContextExecutor;
 import com.materia.backend.infrastructure.grpc.GrpcChannels;
 import com.materia.backend.infrastructure.grpc.OutgoingCallerToken;
 import com.materia.grpc.auth.CallerTokenClientInterceptor;
@@ -15,6 +16,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * Analytics' gRPC: it serves nothing, and reads the reporting figures of procurement (procurement.v1, today in the
@@ -46,6 +49,16 @@ public class AnalyticsGrpcConfig {
     public ManagedChannel financeChannel(OutgoingCallerToken tokens, @Value("${app.grpc.finance.target}") String target,
                                          @Value("${app.grpc.finance.deadline:5s}") Duration deadline) {
         return channel(tokens, target, deadline);
+    }
+
+    /**
+     * Where the dashboard asks for its figures side by side (DashboardService): a virtual thread per call, which only
+     * waits on the network, each run as the user who opened the dashboard.
+     */
+    @Bean
+    public Executor dashboardExecutor() {
+        return new CallContextExecutor(
+                Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("dashboard-", 0).factory()));
     }
 
     @Bean
