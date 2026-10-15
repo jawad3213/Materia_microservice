@@ -3,8 +3,8 @@ package com.materia.backend.contexts.returnToVendor.application.services;
 import com.materia.backend.contexts.goodsReceipt.domain.entities.GoodsReceipt;
 import com.materia.backend.contexts.goodsReceipt.domain.enums.ReceiptStatus;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptRepository;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrder;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.OrderStatus;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.out.PurchaseOrderRepository;
@@ -68,12 +68,12 @@ class ReturnToVendorServiceTest {
     @Mock private ApplicationEventPublisher events;
     @Mock private GoodsReceiptRepository receipts;
     @Mock private PurchaseOrderRepository orders;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
 
     private ReturnToVendorService service;
     private PurchaseOrder order;
     private GoodsReceipt receipt;
-    private Material material;
+    private TestMaterial material;
     private final List<ReturnToVendor> stored = new ArrayList<>();
 
     @BeforeEach
@@ -90,8 +90,7 @@ class ReturnToVendorServiceTest {
         when(receipts.findById(receipt.getId())).thenReturn(Optional.of(receipt));
         when(orders.findById(order.getId())).thenReturn(Optional.of(order));
         when(orders.save(any(PurchaseOrder.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(materials.findById(any())).thenReturn(Optional.of(material));
-        when(materials.save(any(Material.class))).thenAnswer(inv -> inv.getArgument(0));
+        materials.everyLookupFinds(material);
         when(returns.findByGoodsReceiptId(receipt.getId().toString())).thenAnswer(inv -> List.copyOf(stored));
         when(returns.save(any(ReturnToVendor.class))).thenAnswer(inv -> {
             ReturnToVendor saved = inv.getArgument(0);
@@ -272,14 +271,14 @@ class ReturnToVendorServiceTest {
         assertEquals(ReturnStatus.PENDING.name(), pending.getStatus());
         assertEquals(3, pending.getLines().get(0).getQuantityAlreadyReturned());
         assertEquals(0, pending.getLines().get(0).getRemainingQuantity());
-        verify(materials, never()).save(any());
+        assertEquals(0, materials.movements(), "no stock movement");
         assertEquals(6, material.getCurrentStock());
     }
 
     @Test
     @DisplayName("replacement: the order is reopened for receipt and the quantity goes back on order")
     void replacement_reopensTheOrder() {
-        int onOrderBefore = material.getStockOnOrder() != null ? material.getStockOnOrder() : 0;
+        int onOrderBefore = material.getStockOnOrder();
         ReturnToVendorOutput pending = pendingReturnOf(3);
 
         ReturnToVendorOutput resolved = service.resolve(pending.getId(), USER, ResolutionType.REPLACEMENT, "RMA-77", "Sending new bolts");
@@ -321,7 +320,7 @@ class ReturnToVendorServiceTest {
         assertTrue(resolved.getLines().get(0).isCreditNote());
         assertEquals(OrderStatus.COMPLETED, order.getStatus());
         verify(orders, never()).save(any());
-        verify(materials, never()).save(any());
+        assertEquals(0, materials.movements(), "no stock movement");
     }
 
     @Test

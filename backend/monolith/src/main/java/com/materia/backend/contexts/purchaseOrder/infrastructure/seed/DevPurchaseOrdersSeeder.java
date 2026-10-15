@@ -3,14 +3,10 @@ package com.materia.backend.contexts.purchaseOrder.infrastructure.seed;
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
 import com.materia.backend.common.infrastructure.seed.DevSeed;
+import com.materia.backend.infrastructure.seed.DevCatalog;
+import com.materia.backend.infrastructure.seed.DevCatalog.SeedMaterial;
 import com.materia.backend.infrastructure.seed.DevUsers;
 import com.materia.backend.infrastructure.seed.DevUsers.SeedUser;
-import com.materia.backend.contexts.masterData.application.dtos.material.MaterialOutput;
-import com.materia.backend.contexts.masterData.application.dtos.material.MaterialReference;
-import com.materia.backend.contexts.masterData.application.dtos.supplier.SupplierOutput;
-import com.materia.backend.contexts.masterData.domain.ports.in.MaterialInventoryUseCase;
-import com.materia.backend.contexts.masterData.domain.ports.in.MaterialUseCase;
-import com.materia.backend.contexts.masterData.domain.ports.in.SupplierUseCase;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineInput;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.in.PurchaseOrderUseCase;
@@ -57,19 +53,14 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
 
     private final PurchaseOrderUseCase orders;
     private final RequisitionUseCase requisitions;
-    private final MaterialUseCase materials;
-    private final MaterialInventoryUseCase inventory;
-    private final SupplierUseCase suppliers;
+    private final DevCatalog catalog;
     private final DevUsers users;
 
-    public DevPurchaseOrdersSeeder(PurchaseOrderUseCase orders, RequisitionUseCase requisitions,
-                                   MaterialUseCase materials, MaterialInventoryUseCase inventory,
-                                   SupplierUseCase suppliers, DevUsers users) {
+    public DevPurchaseOrdersSeeder(PurchaseOrderUseCase orders, RequisitionUseCase requisitions, DevCatalog catalog,
+                                   DevUsers users) {
         this.orders = orders;
         this.requisitions = requisitions;
-        this.materials = materials;
-        this.inventory = inventory;
-        this.suppliers = suppliers;
+        this.catalog = catalog;
         this.users = users;
     }
 
@@ -82,7 +73,7 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
         SeedUser purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
         SeedUser admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
         SeedUser receiver = users.findUserByEmail(DevSeed.RECEIVER_EMAIL).orElse(null);
-        List<List<MaterialOutput>> bySupplier = orderableMaterialsBySupplier();
+        List<List<SeedMaterial>> bySupplier = orderableMaterialsBySupplier();
         if (purchaser == null || admin == null || receiver == null || bySupplier.isEmpty()) {
             log.warn("[DEV-SEED] No purchase order seeded: the dev accounts or orderable materials are missing");
             return;
@@ -109,7 +100,7 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
         int directOrders = DevSeed.DOCUMENTS_PER_MODULE - toConvert.size();
         for (int direct = 0; direct < directOrders; direct++) {
             int index = direct;
-            List<MaterialOutput> lines = bySupplier.get(direct % bySupplier.size());
+            List<SeedMaterial> lines = bySupplier.get(direct % bySupplier.size());
             Stage stage = direct < DIRECT_ORDER_STAGES.size() ? DIRECT_ORDER_STAGES.get(direct) : Stage.READY_FOR_RECEIPT;
             if (DevSeed.attempt(log, stage + " direct order " + (direct + 1), () -> {
                 UUID order = directOrder(lines, index, purchaser);
@@ -149,7 +140,8 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
      */
     private UUID orderRequisition(RequisitionOutput requisition, SeedUser purchaser, int index) {
         List<RequisitionLineSummary> requested = requisition.getLineSummaries();
-        CreatePurchaseOrderInput input = header(requested.get(0).supplierId(), purchaser, LocalDate.now(), index);
+        CreatePurchaseOrderInput input = header(catalog.material(requested.get(0).materialCode()), purchaser,
+                LocalDate.now(), index);
         input.setRequisitionId(requisition.getId());
         input.setRequisitionCode(requisition.getRequisitionCode());
         input.setNotes("Converted from requisition " + requisition.getRequisitionCode());
@@ -164,39 +156,36 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
     }
 
     /** An order without requisition, placed in the last weeks: the oldest first, one every two days. */
-    private UUID directOrder(List<MaterialOutput> materialsOfSupplier, int direct, SeedUser purchaser) {
+    private UUID directOrder(List<SeedMaterial> materialsOfSupplier, int direct, SeedUser purchaser) {
         LocalDate orderDate = DevSeed.daysAgo(Math.max(1, 45 - direct * 2));
-        CreatePurchaseOrderInput input = header(UUID.fromString(materialsOfSupplier.get(0).getSupplierId()), purchaser,
-                orderDate, direct);
+        CreatePurchaseOrderInput input = header(materialsOfSupplier.get(0), purchaser, orderDate, direct);
         input.setNotes("Direct order, no requisition");
         List<PurchaseOrderLineInput> lines = new ArrayList<>();
         int count = 1 + direct % 2;
         for (int i = 0; i < Math.min(count, materialsOfSupplier.size()); i++) {
-            MaterialOutput material = materialsOfSupplier.get((direct + i) % materialsOfSupplier.size());
-            Integer eoq = material.getEconomicOrderQuantity();
+            SeedMaterial material = materialsOfSupplier.get((direct + i) % materialsOfSupplier.size());
+            Integer eoq = material.economicOrderQuantity();
             int base = eoq != null && eoq > 0 ? eoq : 50;
-            lines.add(line(material.getCode(), Math.max(10, base * (2 + direct % 3) / 4)));
+            lines.add(line(material.code(), Math.max(10, base * (2 + direct % 3) / 4)));
         }
         input.setLines(lines);
         return orders.create(input).getId();
     }
 
-    /** Active materials priced in MAD, one group per supplier. */
-    private List<List<MaterialOutput>> orderableMaterialsBySupplier() {
-        Map<String, List<MaterialOutput>> groups = materials.getAll().stream()
-                .filter(m -> "ACTIVE".equals(m.getStatus()) && "MAD".equalsIgnoreCase(m.getCurrencyCode()))
-                .filter(m -> m.getSupplierId() != null)
-                .collect(Collectors.groupingBy(MaterialOutput::getSupplierId, LinkedHashMap::new, Collectors.toList()));
+    /** Orderable materials priced in MAD, one group per supplier. */
+    private List<List<SeedMaterial>> orderableMaterialsBySupplier() {
+        Map<UUID, List<SeedMaterial>> groups = catalog.orderableMaterials().stream()
+                .filter(m -> m.pricedIn(CurrencyCode.MAD))
+                .collect(Collectors.groupingBy(SeedMaterial::supplierId, LinkedHashMap::new, Collectors.toList()));
         return new ArrayList<>(groups.values());
     }
 
-    /** An order placed on {@code orderDate}, delivered two to four weeks later. */
-    private CreatePurchaseOrderInput header(UUID supplierId, SeedUser purchaser, LocalDate orderDate, int index) {
-        SupplierOutput supplier = suppliers.getById(supplierId);
+    /** An order to the supplier of {@code supplied}, placed on {@code orderDate}, delivered two to four weeks later. */
+    private CreatePurchaseOrderInput header(SeedMaterial supplied, SeedUser purchaser, LocalDate orderDate, int index) {
         CreatePurchaseOrderInput input = new CreatePurchaseOrderInput();
-        input.setSupplierId(supplierId);
-        input.setSupplierName(supplier.getName());
-        input.setSupplierCode(supplier.getCode());
+        input.setSupplierId(supplied.supplierId());
+        input.setSupplierName(supplied.supplierName());
+        input.setSupplierCode(supplied.supplierCode());
         input.setOrderDate(orderDate);
         input.setExpectedDeliveryDate(orderDate.plusDays(14 + index % 3 * 7));
         input.setPaymentTerms(index % 2 == 0 ? "NET_30" : "NET_60");
@@ -211,8 +200,7 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
     }
 
     private PurchaseOrderLineInput line(String materialCode, Integer quantity) {
-        MaterialReference material = inventory.findMaterialByCode(materialCode).orElseThrow(
-                () -> new IllegalStateException("Seeded material " + materialCode + " not found"));
+        SeedMaterial material = catalog.material(materialCode);
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialId(material.id());
         line.setMaterialCode(material.code());

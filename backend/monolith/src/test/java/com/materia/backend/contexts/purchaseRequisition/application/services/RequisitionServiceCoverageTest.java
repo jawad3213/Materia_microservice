@@ -6,9 +6,8 @@ import com.materia.backend.common.application.exceptions.ValidationException;
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.services.ExchangeRateService;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.enums.MaterialStatus;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.CreateRequisitionInput;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.RequisitionSearchCriteria;
 import com.materia.backend.contexts.purchaseRequisition.application.mappers.RequisitionMapper;
@@ -50,7 +49,7 @@ import static org.mockito.Mockito.*;
 class RequisitionServiceCoverageTest {
 
     @Mock private RequisitionRepository requisitions;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private RequisitionCodeGeneratorService codeGenerator;
     @Mock private ExchangeRateService exchangeRates;
 
@@ -64,16 +63,14 @@ class RequisitionServiceCoverageTest {
         when(requisitions.findFirstByRequesterName(anyString())).thenReturn(Optional.empty());
     }
 
-    private Material orderable(String price, CurrencyCode currency) {
-        Material m = aMaterial().build();
-        m.setId(UUID.randomUUID());
+    private TestMaterial orderable(String price, CurrencyCode currency) {
+        TestMaterial m = aMaterial().build();
         m.setStandardPrice(Money.of(price, currency));
-        when(materials.findById(m.getId())).thenReturn(Optional.of(m));
-        when(materials.findByCode(m.getCode().getValue())).thenReturn(Optional.of(m));
+        materials.save(m);
         return m;
     }
 
-    private static RequisitionLine byId(Material m, Integer qty) {
+    private static RequisitionLine byId(TestMaterial m, Integer qty) {
         RequisitionLine line = new RequisitionLine((String) null, qty);
         line.setMaterialId(m.getId());
         return line;
@@ -98,9 +95,9 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("create: lines are filled from the material by id or code, numbered, priced, and the code is generated")
     void create_hydratesLines() {
-        Material a = orderable("2.00", CurrencyCode.MAD);
-        Material b = orderable("3.00", CurrencyCode.MAD);
-        RequisitionLine byCode = new RequisitionLine(" " + b.getCode().getValue() + " ", 1);
+        TestMaterial a = orderable("2.00", CurrencyCode.MAD);
+        TestMaterial b = orderable("3.00", CurrencyCode.MAD);
+        RequisitionLine byCode = new RequisitionLine(" " + b.getCode() + " ", 1);
 
         var out = service.create(input(byId(a, 4), byCode));
 
@@ -116,7 +113,7 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("create: a price in another currency is converted to the requisition's currency")
     void create_convertsForeignPrices() {
-        Material m = orderable("1.00", CurrencyCode.EUR);
+        TestMaterial m = orderable("1.00", CurrencyCode.EUR);
         when(exchangeRates.convert(any(Money.class), eq(CurrencyCode.MAD))).thenReturn(Money.of("11.00", CurrencyCode.MAD));
 
         service.create(input(byId(m, 2)));
@@ -129,7 +126,7 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("create: a given currency is used; a material without a price keeps its own pricing")
     void create_givenCurrency_andUnpricedMaterial() {
-        Material eur = orderable("5.00", CurrencyCode.EUR);
+        TestMaterial eur = orderable("5.00", CurrencyCode.EUR);
         CreateRequisitionInput in = input(byId(eur, 1));
         in.setCurrencyCode("EUR");
 
@@ -142,7 +139,7 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("create and update: a blank or missing currency means MAD")
     void blankCurrency_meansMad() {
-        Material m = orderable("1.00", CurrencyCode.MAD);
+        TestMaterial m = orderable("1.00", CurrencyCode.MAD);
         CreateRequisitionInput blank = input(byId(m, 1));
         blank.setCurrencyCode(" ");
         service.create(blank);
@@ -158,7 +155,7 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("create: requester is the given id, else an earlier requisition by that name, else the user, else the name")
     void create_resolvesRequester() {
-        Material m = orderable("1.00", CurrencyCode.MAD);
+        TestMaterial m = orderable("1.00", CurrencyCode.MAD);
 
         CreateRequisitionInput explicit = input(byId(m, 1));
         explicit.setRequesterId("emp-1");
@@ -184,9 +181,9 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("create: missing, null, unknown, materialless, unorderable or zero-quantity lines are refused")
     void create_lineRefusals() {
-        Material m = orderable("1.00", CurrencyCode.MAD);
-        Material obsolete = orderable("1.00", CurrencyCode.MAD);
-        obsolete.setStatus(MaterialStatus.OBSOLETE);
+        TestMaterial m = orderable("1.00", CurrencyCode.MAD);
+        TestMaterial obsolete = orderable("1.00", CurrencyCode.MAD);
+        obsolete.retire();
 
         assertThrows(ValidationException.class, () -> service.create(input()));
         CreateRequisitionInput nullLine = input();
@@ -195,10 +192,8 @@ class RequisitionServiceCoverageTest {
 
         RequisitionLine unknownId = new RequisitionLine((String) null, 1);
         unknownId.setMaterialId(UUID.randomUUID());
-        when(materials.findById(unknownId.getMaterialId())).thenReturn(Optional.empty());
         assertThrows(RequisitionMaterialNotFoundException.class, () -> service.create(input(unknownId)));
 
-        when(materials.findByCode("NOPE")).thenReturn(Optional.empty());
         assertThrows(RequisitionMaterialNotFoundException.class,
                 () -> service.create(input(new RequisitionLine("NOPE", 1))));
         assertThrows(ValidationException.class, () -> service.create(input(new RequisitionLine(" ", 1))));
@@ -212,7 +207,7 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("create: an existing line id is kept")
     void create_keepsExistingLineId() {
-        Material m = orderable("1.00", CurrencyCode.MAD);
+        TestMaterial m = orderable("1.00", CurrencyCode.MAD);
         RequisitionLine line = byId(m, 1);
         UUID id = UUID.randomUUID();
         line.setId(id);
@@ -227,7 +222,7 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("update from a create form: the fields are carried over and lines re-hydrated")
     void update_fromCreateInput() {
-        Material m = orderable("2.00", CurrencyCode.MAD);
+        TestMaterial m = orderable("2.00", CurrencyCode.MAD);
         Requisition r = aRequisition().build();
         when(requisitions.findById(r.getId())).thenReturn(Optional.of(r));
         CreateRequisitionInput in = input(byId(m, 3));
@@ -305,7 +300,7 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("reorder requisition: urgent ones are flagged and needed in 2 days, with the material's currency")
     void reorder_urgent() {
-        Material m = orderable("4.00", CurrencyCode.EUR);
+        TestMaterial m = orderable("4.00", CurrencyCode.EUR);
 
         String code = service.createRequisitionFromReorder(snapshotOf(m), 5, "Below safety stock", true);
 
@@ -321,7 +316,7 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("reorder requisition: routine ones are needed in 7 days, default to MAD and a standard reason, and fall back to the id")
     void reorder_routine() {
-        Material m = aMaterial().build();
+        TestMaterial m = aMaterial().build();
         m.setStandardPrice(null);
         when(codeGenerator.generateCode()).thenReturn(null);
 
@@ -341,8 +336,8 @@ class RequisitionServiceCoverageTest {
     @Test
     @DisplayName("grouped requisition: one requisition per supplier with every hydrated line")
     void grouped() {
-        Material a = orderable("1.00", CurrencyCode.MAD);
-        Material b = orderable("2.00", CurrencyCode.MAD);
+        TestMaterial a = orderable("1.00", CurrencyCode.MAD);
+        TestMaterial b = orderable("2.00", CurrencyCode.MAD);
 
         String code = service.createGroupedRequisition("sup-1", new ArrayList<>(List.of(byId(a, 2), byId(b, 1))));
 

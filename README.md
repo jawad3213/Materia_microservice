@@ -433,10 +433,13 @@ cd backend
 ./mvnw -pl monolith -am spring-boot:run
 # Identity (REST 8082, gRPC 9091) : connexion, comptes, employés ; seul signataire des jetons
 ./mvnw -pl identity-service -am spring-boot:run
-# La passerelle (port 8090) : le seul point d'entrée, qui route vers identity et le monolithe
-SERVER_PORT=8090 MANAGEMENT_SERVER_PORT=8091 GATEWAY_IDENTITY_URI=http://localhost:8082   ./mvnw -pl gateway-service -am spring-boot:run
+# Master data (REST 8083, gRPC 9092) : articles, catégories, fournisseurs, stock (reçoit les événements via Kafka)
+./mvnw -pl masterdata-service -am spring-boot:run
+# La passerelle (port 8090) : le seul point d'entrée, qui route vers identity, master data et le monolithe
+SERVER_PORT=8090 MANAGEMENT_SERVER_PORT=8091 GATEWAY_IDENTITY_URI=http://localhost:8082 \
+  GATEWAY_MASTERDATA_URI=http://localhost:8083 ./mvnw -pl gateway-service -am spring-boot:run
 ```
-*Le frontend appelle l'API via la passerelle : `http://localhost:8090/api/v1`.*
+*Le frontend appelle l'API via la passerelle : `http://localhost:8090/api/v1`. Les événements entre services passent par Kafka (`localhost:9092`, par exemple `docker compose up -d kafka`).*
 
 #### 2. Démarrer le Frontend (dans un autre terminal) :
 ```bash

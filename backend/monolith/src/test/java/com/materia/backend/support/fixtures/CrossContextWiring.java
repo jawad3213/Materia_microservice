@@ -9,14 +9,10 @@ import com.materia.backend.contexts.goodsReceipt.infrastructure.adapters.out.sto
 import com.materia.backend.contexts.invoice.domain.ports.out.InvoicedOrders;
 import com.materia.backend.contexts.invoice.infrastructure.adapters.out.procurement.ProcurementInvoicedOrders;
 import com.materia.backend.contexts.goodsReceipt.infrastructure.adapters.in.grpc.GoodsReceiptLookupGrpcService;
-import com.materia.backend.contexts.masterData.application.services.MaterialInventoryService;
-import com.materia.backend.contexts.masterData.infrastructure.adapters.in.grpc.MaterialCatalogGrpcService;
 import com.materia.backend.contexts.purchaseOrder.infrastructure.adapters.in.grpc.PurchaseOrderLookupGrpcService;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
 import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
 import com.materia.proto.procurement.v1.PurchaseOrderLookupGrpc;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
 import com.materia.backend.contexts.purchaseOrder.application.services.PurchaseOrderLookupService;
 import com.materia.backend.contexts.purchaseOrder.application.services.PurchaseOrderReceivingService;
 import com.materia.backend.contexts.purchaseOrder.domain.events.PurchaseOrderConfirmedEvent;
@@ -41,15 +37,14 @@ public final class CrossContextWiring {
     private CrossContextWiring() {
     }
 
-    /** The requisition context's view of the materials held by {@code materials}. */
-    public static MaterialCatalog materialCatalogOver(MaterialRepository materials) {
-        return new MasterDataMaterialCatalog(materialStub(new MaterialInventoryService(materials)));
+    /** The requisition context's view of the materials held by master data ({@code materials}). */
+    public static MaterialCatalog materialCatalogOver(TestMaterialCatalog materials) {
+        return new MasterDataMaterialCatalog(materialStub(materials));
     }
 
     /** What a requisition line records of {@code material}. */
-    public static MaterialSnapshot snapshotOf(Material material) {
-        return MasterDataMaterialCatalog.toSnapshot(
-                MaterialCatalogGrpcService.toProto(MaterialInventoryService.toReference(material)));
+    public static MaterialSnapshot snapshotOf(TestMaterial material) {
+        return MasterDataMaterialCatalog.toSnapshot(TestMaterialCatalog.toProto(material));
     }
 
     /** The goods receipt context's view of the purchase orders held by {@code orders}. */
@@ -58,20 +53,19 @@ public final class CrossContextWiring {
                 new PurchaseOrderReceivingService(orders, orderEvents));
     }
 
-    /** The goods receipt context's view of the stock of the materials held by {@code materials}. */
-    public static ReceivedStock receivedStockOver(MaterialRepository materials) {
+    /** The goods receipt context's view of the stock of the materials held by master data ({@code materials}). */
+    public static ReceivedStock receivedStockOver(TestMaterialCatalog materials) {
         return receivedStockOver(materials, new InlineEvents());
     }
 
     /**
-     * Same, over {@code events}: master data's handler applies the announced lines at once. Register the receipt's
-     * stock-levels handler on {@code events} to also see the levels recorded on the lines.
+     * Same, over {@code events}: master data's side ({@link TestStockKeeper}) applies the announced lines at once and
+     * answers on {@code events}. Register the receipt's stock-levels handler on {@code events} to also see the levels
+     * recorded on the lines.
      */
-    public static ReceivedStock receivedStockOver(MaterialRepository materials, InlineEvents events) {
-        MaterialInventoryService inventory = new MaterialInventoryService(materials);
-        events.add(new com.materia.backend.contexts.masterData.infrastructure.adapters.in.events.ReceivedGoodsStockHandler(
-                inventory, events));
-        return new MaterialReceivedStock(materialStub(inventory), events);
+    public static ReceivedStock receivedStockOver(TestMaterialCatalog materials, InlineEvents events) {
+        TestStockKeeper.on(events, materials);
+        return new MaterialReceivedStock(materialStub(materials), events);
     }
 
     /** The invoice context's view of the orders in {@code orders} and the receipts in {@code receipts}. */
@@ -85,20 +79,19 @@ public final class CrossContextWiring {
 
     /**
      * The return-to-vendor context's view of receipts and orders; goods put back on order reach the materials held by
-     * {@code materials} through master data's handler of {@code ReplacementPutOnOrder}, applied at once.
+     * master data ({@code materials}) through its side of {@code ReplacementPutOnOrder}, applied at once.
      */
     public static ReturnSources returnSourcesOver(GoodsReceiptRepository receipts, PurchaseOrderRepository orders,
-                                                  MaterialRepository materials) {
-        InlineEvents events = new InlineEvents().add(
-                new com.materia.backend.contexts.masterData.infrastructure.adapters.in.events.StockOnOrderHandler(
-                        new MaterialInventoryService(materials)));
+                                                  TestMaterialCatalog materials) {
+        InlineEvents events = new InlineEvents();
+        TestStockKeeper.on(events, materials);
         return new ProcurementReturnSources(new GoodsReceiptLookupService(receipts), new PurchaseOrderLookupService(orders),
                 new PurchaseOrderReceivingService(orders, NO_ORDER_EVENTS), events);
     }
 
-    /** Master data's catalogue contract, served over {@code inventory}. */
-    private static MaterialCatalogGrpc.MaterialCatalogBlockingStub materialStub(MaterialInventoryService inventory) {
-        return MaterialCatalogGrpc.newBlockingStub(InProcessGrpc.serving(new MaterialCatalogGrpcService(inventory)));
+    /** Master data's catalogue contract, served over {@code materials}. */
+    private static MaterialCatalogGrpc.MaterialCatalogBlockingStub materialStub(TestMaterialCatalog materials) {
+        return MaterialCatalogGrpc.newBlockingStub(InProcessGrpc.serving(materials));
     }
 
     private static final PurchaseOrderEventPublisher NO_ORDER_EVENTS = new PurchaseOrderEventPublisher() {

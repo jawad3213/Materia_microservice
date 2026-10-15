@@ -8,8 +8,8 @@ import com.materia.backend.contexts.goodsReceipt.domain.exceptions.GoodsReceiptB
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptEventPublisher;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptRepository;
 import com.materia.backend.contexts.goodsReceipt.domain.valueObjects.ReceiptCode;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrder;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.OrderStatus;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.out.PurchaseOrderEventPublisher;
@@ -45,7 +45,7 @@ class GoodsReceiptServiceReceiveRemainingTest {
     @Mock private GoodsReceiptEventPublisher receiptEvents;
     @Mock private GoodsReceiptCodeGeneratorService codeGenerator;
     @Mock private PurchaseOrderRepository orders;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private PurchaseOrderEventPublisher orderEvents;
 
     private GoodsReceiptService service;
@@ -63,9 +63,8 @@ class GoodsReceiptServiceReceiveRemainingTest {
             return receipt;
         });
         when(orders.save(any(PurchaseOrder.class))).thenAnswer(inv -> inv.getArgument(0));
-        Material material = aMaterial().stock(0).build();
-        when(materials.findById(any())).thenReturn(Optional.of(material));
-        when(materials.save(any(Material.class))).thenAnswer(inv -> inv.getArgument(0));
+        TestMaterial material = aMaterial().stock(0).build();
+        materials.everyLookupFinds(material);
     }
 
     private PurchaseOrder stored(PurchaseOrder po, List<GoodsReceipt> earlier) {

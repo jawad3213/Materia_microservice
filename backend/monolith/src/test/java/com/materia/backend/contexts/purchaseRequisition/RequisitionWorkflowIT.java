@@ -3,8 +3,8 @@ package com.materia.backend.contexts.purchaseRequisition;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.materia.backend.common.application.PageResponse;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.contexts.purchaseRequisition.domain.entities.Requisition;
 import com.materia.backend.contexts.purchaseRequisition.domain.enums.RequisitionStatus;
 import com.materia.backend.contexts.purchaseRequisition.domain.ports.out.RequisitionRepository;
@@ -48,7 +48,7 @@ class RequisitionWorkflowIT extends AbstractIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private RequisitionRepository requisitions;
-    @Autowired private MaterialRepository materials;
+    @Autowired private TestMasterData materials;
     @PersistenceContext private EntityManager em;
 
     private void flushAndClear() {
@@ -56,8 +56,8 @@ class RequisitionWorkflowIT extends AbstractIntegrationTest {
         em.clear();
     }
 
-    private Material orderableMaterial() {
-        Material m = materials.save(aMaterial().price("12.50").build());
+    private TestMaterial orderableMaterial() {
+        TestMaterial m = materials.save(aMaterial().price("12.50").build());
         flushAndClear();
         return m;
     }
@@ -152,7 +152,7 @@ class RequisitionWorkflowIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("create: a requisition created over HTTP starts as a draft, priced from the material")
     void create_overHttp_startsAsDraftPricedFromMaterial() throws Exception {
-        Material material = orderableMaterial();
+        TestMaterial material = orderableMaterial();
 
         JsonNode created = createViaHttp(Map.of("title", "Printer paper", "requesterName", "Alice",
                 "lines", List.of(Map.of("materialId", material.getId().toString(), "quantity", 4))));
@@ -178,7 +178,7 @@ class RequisitionWorkflowIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("create: a requisition always starts as a draft, whatever status the caller asks for")
     void create_ignoresClientSuppliedStatus() throws Exception {
-        Material material = orderableMaterial();
+        TestMaterial material = orderableMaterial();
 
         JsonNode created = createViaHttp(Map.of("title", "Pre-approved", "requesterName", "Alice",
                 "status", "APPROVED",

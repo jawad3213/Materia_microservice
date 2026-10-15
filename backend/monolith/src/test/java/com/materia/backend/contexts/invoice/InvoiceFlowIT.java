@@ -16,8 +16,8 @@ import com.materia.backend.contexts.invoice.domain.enums.InvoiceType;
 import com.materia.backend.contexts.invoice.domain.exceptions.InvoiceRuleViolationException;
 import com.materia.backend.contexts.invoice.domain.exceptions.InvoiceSupplierMismatchException;
 import com.materia.backend.contexts.invoice.domain.ports.in.InvoiceUseCase;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderOutput;
@@ -46,7 +46,7 @@ class InvoiceFlowIT extends AbstractIntegrationTest {
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private InvoiceUseCase invoices;
-    @Autowired private MaterialRepository materials;
+    @Autowired private TestMasterData materials;
     @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
@@ -57,11 +57,11 @@ class InvoiceFlowIT extends AbstractIntegrationTest {
 
     /** An order of 10 units at 5.00 MAD, of which {@code received} were accepted on a validated receipt. */
     private PurchaseOrderOutput orderWithReceipt(int received) {
-        Material material = materials.save(aMaterial().stock(0).build());
+        TestMaterial material = materials.save(aMaterial().stock(0).build());
         TestAccount receiver = users.save(aReceiver().build());
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialId(material.getId());
-        line.setMaterialCode(material.getCode().getValue());
+        line.setMaterialCode(material.getCode());
         line.setMaterialName(material.getName());
         line.setQuantity(10);
         line.setUnitPrice(Money.of("5.00", CurrencyCode.MAD));

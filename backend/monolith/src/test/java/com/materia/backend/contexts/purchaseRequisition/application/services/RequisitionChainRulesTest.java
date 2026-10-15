@@ -1,8 +1,8 @@
 package com.materia.backend.contexts.purchaseRequisition.application.services;
 
 import com.materia.backend.common.domain.services.ExchangeRateService;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.ReplenishmentLineInput;
 import com.materia.backend.contexts.purchaseRequisition.application.mappers.RequisitionMapper;
 import com.materia.backend.contexts.purchaseRequisition.domain.entities.Requisition;
@@ -41,7 +41,7 @@ import static org.mockito.Mockito.*;
 class RequisitionChainRulesTest {
 
     @Mock private RequisitionRepository requisitions;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private RequisitionCodeGeneratorService codes;
     @Mock private ExchangeRateService rates;
     @Mock private RequesterDirectory directory;
@@ -66,7 +66,7 @@ class RequisitionChainRulesTest {
     @Test
     @DisplayName("reorder: the system requests automatic reorders; a user who clicked is the requester, named from their account")
     void reorderRequester() {
-        Material m = aMaterial().stock(1).price("2.00").build();
+        TestMaterial m = aMaterial().stock(1).price("2.00").build();
 
         service.createRequisitionFromReorder(snapshotOf(m), 5, "auto", true);
         assertEquals(RequisitionService.SYSTEM_REQUESTER_ID, saved().getRequesterId());
@@ -93,15 +93,14 @@ class RequisitionChainRulesTest {
     @Test
     @DisplayName("replenishment: the master data context raises a requisition by material id, read through the material catalog")
     void replenishment_byMaterialId() {
-        Material m = aMaterial().stock(1).price("2.00").build();
-        m.setId(UUID.randomUUID());
-        when(materials.findById(m.getId())).thenReturn(Optional.of(m));
+        TestMaterial m = aMaterial().stock(1).price("2.00").build();
+        materials.save(m);
 
         service.raiseReplenishment(m.getId(), 5, "auto", true, null);
 
         Requisition requisition = saved();
         assertEquals(m.getId(), requisition.getLines().get(0).getMaterialId());
-        assertEquals(m.getCode().getValue(), requisition.getLines().get(0).getMaterialCode());
+        assertEquals(m.getCode(), requisition.getLines().get(0).getMaterialCode());
         assertEquals(5, requisition.getLines().get(0).getQuantity());
         assertEquals(RequisitionService.SYSTEM_REQUESTER_ID, requisition.getRequesterId());
     }
@@ -110,7 +109,6 @@ class RequisitionChainRulesTest {
     @DisplayName("replenishment: an unknown material raises nothing")
     void replenishment_unknownMaterial() {
         UUID unknown = UUID.randomUUID();
-        when(materials.findById(unknown)).thenReturn(Optional.empty());
 
         assertThrows(RequisitionMaterialNotFoundException.class,
                 () -> service.raiseReplenishment(unknown, 5, "auto", false, null));
@@ -120,15 +118,14 @@ class RequisitionChainRulesTest {
     @Test
     @DisplayName("replenishment: a grouped replenishment becomes one requisition with a line per material")
     void replenishment_grouped() {
-        Material a = aMaterial().stock(1).price("2.00").build();
-        Material b = aMaterial().stock(1).price("3.00").build();
-        a.setId(UUID.randomUUID());
-        when(materials.findByCode(a.getCode().getValue())).thenReturn(Optional.of(a));
-        when(materials.findByCode(b.getCode().getValue())).thenReturn(Optional.of(b));
+        TestMaterial a = aMaterial().stock(1).price("2.00").build();
+        TestMaterial b = aMaterial().stock(1).price("3.00").build();
+        materials.save(a);
+        materials.save(b);
 
         service.raiseGroupedReplenishment("sup-1", List.of(
-                new ReplenishmentLineInput(a.getCode().getValue(), 3),
-                new ReplenishmentLineInput(b.getCode().getValue(), 4)));
+                new ReplenishmentLineInput(a.getCode(), 3),
+                new ReplenishmentLineInput(b.getCode(), 4)));
 
         Requisition requisition = saved();
         assertEquals(2, requisition.getLines().size());

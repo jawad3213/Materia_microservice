@@ -12,8 +12,9 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
  * documentation and Identity's public key are reachable from outside.
  *
  * <p>An extracted service gets its own routes by path prefix, checked before the monolith's catch-all: Identity
- * answers /api/v1/auth, /api/v1/employees, the history of its own records (User, Employee) and its public key; the
- * monolith the rest of the API and its docs.
+ * answers /api/v1/auth, /api/v1/employees, the history of its own records (User, Employee) and its public key; master
+ * data /api/v1/masterdata and the history of its records (Material, Supplier, Category); the monolith the rest of the
+ * API and its docs.
  */
 @Configuration
 public class GatewayRoutes {
@@ -26,6 +27,10 @@ public class GatewayRoutes {
                                 "/api/v1/audit/User/**", "/api/v1/audit/Employee/**")
                         .uri(gateway.identityUri()))
                 .route("jwks", route -> route.order(-1).path("/.well-known/jwks.json").uri(gateway.identityUri()))
+                .route("masterdata", route -> route.order(-1)
+                        .path("/api/v1/masterdata/**", "/api/v1/audit/Material/**", "/api/v1/audit/Supplier/**",
+                                "/api/v1/audit/Category/**")
+                        .uri(gateway.masterDataUri()))
                 .route("api", route -> route.path("/api/**").uri(gateway.backendUri()))
                 .route("api-docs", route -> route.path("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**")
                         .uri(gateway.backendUri()))

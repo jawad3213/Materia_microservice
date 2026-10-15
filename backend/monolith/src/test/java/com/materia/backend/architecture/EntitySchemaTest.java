@@ -71,7 +71,8 @@ class EntitySchemaTest {
             }
         }
 
-        assertThat(entities).as("entities found").isGreaterThan(20);
+        // The contexts still in this application (identity and master data left with their entities).
+        assertThat(entities).as("entities found").isGreaterThan(10);
         assertThat(violations).isEmpty();
     }
 }

@@ -9,8 +9,8 @@ import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLi
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptOutput;
 import com.materia.backend.contexts.goodsReceipt.domain.exceptions.GoodsReceiptBusinessException;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderOutput;
@@ -46,11 +46,11 @@ class ReturnToVendorFlowIT extends AbstractIntegrationTest {
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private ReturnToVendorUseCase returns;
-    @Autowired private MaterialRepository materials;
+    @Autowired private TestMasterData materials;
     @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
-    private Material material;
+    private TestMaterial material;
     private String receiverId;
     private UUID orderId;
     private String orderLineId;
@@ -68,7 +68,7 @@ class ReturnToVendorFlowIT extends AbstractIntegrationTest {
 
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialId(material.getId());
-        line.setMaterialCode(material.getCode().getValue());
+        line.setMaterialCode(material.getCode());
         line.setMaterialName(material.getName());
         line.setQuantity(10);
         line.setUnitPrice(Money.of("5.00", CurrencyCode.MAD));
@@ -93,7 +93,7 @@ class ReturnToVendorFlowIT extends AbstractIntegrationTest {
     private GoodsReceiptOutput receive(int received, int rejected, String reason) {
         GoodsReceiptLineInput receiptLine = new GoodsReceiptLineInput();
         receiptLine.setPurchaseOrderLineId(orderLineId);
-        receiptLine.setMaterialCode(material.getCode().getValue());
+        receiptLine.setMaterialCode(material.getCode());
         receiptLine.setQuantityReceived(received);
         receiptLine.setQuantityRejected(rejected);
         receiptLine.setRejectionReason(reason);
@@ -118,8 +118,8 @@ class ReturnToVendorFlowIT extends AbstractIntegrationTest {
         return created;
     }
 
-    private Material reloadedMaterial() {
-        return materials.findById(material.getId()).orElseThrow();
+    private TestMaterial reloadedMaterial() {
+        return material;
     }
 
     @Test

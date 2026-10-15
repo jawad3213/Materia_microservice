@@ -8,10 +8,32 @@ import "materia/common/v1/types.proto";
 option java_package = "com.materia.proto.masterdata.v1";
 option java_multiple_files = true;
 
-// Material lookups. Callers: procurement (requisition lines, receipt checks, returns).
+// Material lookups. Callers: procurement (requisition lines, receipt checks, returns, the dev seeders' orders).
 service MaterialCatalog {
   rpc FindMaterial(FindMaterialRequest) returns (FindMaterialResponse);
   rpc FindMaterialByCode(FindMaterialByCodeRequest) returns (FindMaterialResponse);
+  // Mirrors OrderableMaterialsUseCase.
+  rpc FindOrderableMaterials(FindOrderableMaterialsRequest) returns (FindOrderableMaterialsResponse);
+}
+
+message FindOrderableMaterialsRequest {
+}
+
+message FindOrderableMaterialsResponse {
+  // By material code
+  repeated OrderableMaterial materials = 1;
+}
+
+// masterData's OrderableMaterial: a material that can be ordered, with the supplier it is bought from
+message OrderableMaterial {
+  MaterialReference material = 1;
+  // UUID
+  string supplier_id = 2;
+  optional string supplier_code = 3;
+  optional string supplier_name = 4;
+  optional string category_name = 5;
+  // The quantity an order of it is usually sized from
+  optional int32 economic_order_quantity = 6;
 }
 
 message FindMaterialRequest {

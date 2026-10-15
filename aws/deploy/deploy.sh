@@ -68,10 +68,10 @@ health() {
   [ -n "$id" ] && docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id"
 }
 
-# The backend, then identity (which starts once the backend is healthy)
+# The backend, then identity and master data (which start once the backend is healthy)
 wait_healthy() {
   local service
-  for service in backend identity; do
+  for service in backend identity masterdata; do
     for _ in $(seq 1 60); do
       case "$(health "$service" || true)" in
         healthy) continue 2 ;;
@@ -96,7 +96,7 @@ start() {
 
 report_images() {
   local service id image
-  for service in backend identity gateway frontend; do
+  for service in backend identity masterdata gateway frontend; do
     id="$(docker compose ps -q "$service")"
     [ -n "$id" ] || continue
     image="$(docker inspect --format '{{.Image}}' "$id")"
@@ -111,6 +111,8 @@ install -d -m 750 -o 10001 -g 10001 /data/attachments
 # Monitoring data, owned by the users the images run as (Prometheus: nobody, Grafana: 472)
 install -d -m 750 -o 65534 -g 65534 /data/prometheus
 install -d -m 750 -o 472 -g 0 /data/grafana
+# Kafka's log (the apache/kafka image runs as appuser, uid 1000)
+install -d -m 750 -o 1000 -g 1000 /data/kafka
 [ -f monitoring/prometheus/prometheus.yml ] || { log "Monitoring configuration missing in $APP_DIR/monitoring"; exit 1; }
 
 log "Logging in to $REGISTRY"

@@ -1,7 +1,7 @@
 package com.materia.backend.contexts.purchaseRequisition.application.services;
 
 import com.materia.backend.common.domain.services.ExchangeRateService;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.UpdateRequisitionInput;
 import com.materia.backend.contexts.purchaseRequisition.application.mappers.RequisitionMapper;
 import com.materia.backend.contexts.purchaseRequisition.domain.entities.Requisition;
@@ -36,7 +36,7 @@ import static org.mockito.Mockito.*;
 class RequisitionServiceTest {
 
     @Mock private RequisitionRepository requisitions;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private RequisitionCodeGeneratorService codeGenerator;
     @Mock private ExchangeRateService exchangeRates;
 

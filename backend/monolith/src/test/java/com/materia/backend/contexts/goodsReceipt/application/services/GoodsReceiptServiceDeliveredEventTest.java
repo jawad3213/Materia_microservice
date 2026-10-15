@@ -4,8 +4,8 @@ import com.materia.backend.contexts.goodsReceipt.application.mappers.GoodsReceip
 import com.materia.backend.contexts.goodsReceipt.domain.entities.GoodsReceipt;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptEventPublisher;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptRepository;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrder;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.DeliveryStatus;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.OrderStatus;
@@ -43,7 +43,7 @@ class GoodsReceiptServiceDeliveredEventTest {
     @Mock private GoodsReceiptEventPublisher receiptEvents;
     @Mock private GoodsReceiptCodeGeneratorService codeGenerator;
     @Mock private PurchaseOrderRepository orders;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private PurchaseOrderEventPublisher orderEvents;
 
     private GoodsReceiptService service;
@@ -56,8 +56,7 @@ class GoodsReceiptServiceDeliveredEventTest {
         when(receipts.save(any(GoodsReceipt.class))).thenAnswer(inv -> inv.getArgument(0));
         when(receipts.findByPurchaseOrderId(any())).thenReturn(List.of());
         when(orders.save(any(PurchaseOrder.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(materials.findById(any())).thenReturn(Optional.of(aMaterial().stock(0).build()));
-        when(materials.save(any(Material.class))).thenAnswer(inv -> inv.getArgument(0));
+        materials.everyLookupFinds(aMaterial().stock(0).build());
         order = anOrder().withLine(10, "5.00").inStatus(OrderStatus.READY_FOR_RECEIPT).build();
         when(orders.findById(order.getId())).thenReturn(Optional.of(order));
     }

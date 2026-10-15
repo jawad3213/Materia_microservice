@@ -42,11 +42,6 @@
             <groupId>io.grpc</groupId>
             <artifactId>grpc-inprocess</artifactId>
         </dependency>
-        <!-- The network transport to the extracted services (identity) -->
-        <dependency>
-            <groupId>io.grpc</groupId>
-            <artifactId>grpc-netty-shaded</artifactId>
-        </dependency>
 
         <!-- Spring Boot Starter Data JPA -->
         <dependency>

@@ -7,8 +7,8 @@ import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptEv
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptRepository;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.ReplacedReturnQuantities;
 import com.materia.backend.contexts.goodsReceipt.domain.valueObjects.ReceiptCode;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrder;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.OrderStatus;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.out.PurchaseOrderEventPublisher;
@@ -45,7 +45,7 @@ class GoodsReceiptServiceReplacementTest {
     @Mock private GoodsReceiptEventPublisher receiptEvents;
     @Mock private GoodsReceiptCodeGeneratorService codeGenerator;
     @Mock private PurchaseOrderRepository orders;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private PurchaseOrderEventPublisher orderEvents;
 
     private GoodsReceiptService service;
@@ -64,9 +64,8 @@ class GoodsReceiptServiceReplacementTest {
             return receipt;
         });
         when(orders.save(any(PurchaseOrder.class))).thenAnswer(inv -> inv.getArgument(0));
-        Material material = aMaterial().stock(6).build();
-        when(materials.findById(any())).thenReturn(Optional.of(material));
-        when(materials.save(any(Material.class))).thenAnswer(inv -> inv.getArgument(0));
+        TestMaterial material = aMaterial().stock(6).build();
+        materials.everyLookupFinds(material);
 
         // 10 ordered, all received on an earlier receipt with 4 rejected; the order was reopened for a replacement.
         order = anOrder().withLine(10, "5.00").inStatus(OrderStatus.PARTIALLY_RECEIVED).build();

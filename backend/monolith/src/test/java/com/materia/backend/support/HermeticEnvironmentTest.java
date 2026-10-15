@@ -1,8 +1,8 @@
 package com.materia.backend.support;
 
-import com.materia.backend.contexts.masterData.domain.ports.in.CategoryUseCase;
-import com.materia.backend.contexts.masterData.infrastructure.adapters.in.web.controllers.CategoryController;
-import com.materia.backend.contexts.masterData.infrastructure.adapters.in.web.mappers.CategoryWebMapper;
+import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.RequisitionUseCase;
+import com.materia.backend.contexts.purchaseRequisition.infrastructure.adapters.in.web.controllers.RequisitionController;
+import com.materia.backend.contexts.purchaseRequisition.infrastructure.adapters.in.web.mappers.RequisitionWebMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,12 +25,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * database and SMTP server. The suite would then also behave differently locally than in CI, where
  * no .env exists. These checks are the tripwire for that change.
  */
-@WebMvcTest(CategoryController.class)
-@Import(CategoryWebMapper.class)
+@WebMvcTest(RequisitionController.class)
+@Import(RequisitionWebMapper.class)
 class HermeticEnvironmentTest extends AbstractWebMvcTest {
 
     @MockBean
-    private CategoryUseCase categoryUseCase;
+    private RequisitionUseCase requisitionUseCase;
 
     @Autowired
     private ConfigurableEnvironment environment;

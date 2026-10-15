@@ -1,9 +1,9 @@
 package com.materia.backend.support;
 
-import com.materia.backend.contexts.masterData.domain.exceptions.CategoryNotFoundException;
-import com.materia.backend.contexts.masterData.domain.ports.in.CategoryUseCase;
-import com.materia.backend.contexts.masterData.infrastructure.adapters.in.web.controllers.CategoryController;
-import com.materia.backend.contexts.masterData.infrastructure.adapters.in.web.mappers.CategoryWebMapper;
+import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.RequisitionNotFoundException;
+import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.RequisitionUseCase;
+import com.materia.backend.contexts.purchaseRequisition.infrastructure.adapters.in.web.controllers.RequisitionController;
+import com.materia.backend.contexts.purchaseRequisition.infrastructure.adapters.in.web.mappers.RequisitionWebMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -25,39 +25,39 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * the test profile resolves, the real security rules load, and requests reach
  * the controller. Needs no database, so it runs without Docker.
  */
-@WebMvcTest(CategoryController.class)
-@Import(CategoryWebMapper.class)
+@WebMvcTest(RequisitionController.class)
+@Import(RequisitionWebMapper.class)
 class WebMvcSliceSmokeTest extends AbstractWebMvcTest {
 
     @MockBean
-    private CategoryUseCase categoryUseCase;
+    private RequisitionUseCase requisitionUseCase;
 
     @Test
     @DisplayName("slice: a protected endpoint refuses an unauthenticated request with 401")
     void protectedEndpoint_unauthenticated_is401() throws Exception {
-        mockMvc.perform(get("/api/v1/masterdata/categories/{id}", UUID.randomUUID()))
+        mockMvc.perform(get("/api/v1/purchase-requisitions/{id}", UUID.randomUUID()))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    @WithMockUser(authorities = "category:read")
+    @WithMockUser(authorities = "requisition:read")
     @DisplayName("slice: an authenticated request passes security and reaches the controller")
     void protectedEndpoint_authenticated_reachesController() throws Exception {
         // The mocked use case returns null, so the mapper yields an empty body. What matters
         // here is that the request got past security to the controller, not the payload.
-        mockMvc.perform(get("/api/v1/masterdata/categories/{id}", UUID.randomUUID()))
+        mockMvc.perform(get("/api/v1/purchase-requisitions/{id}", UUID.randomUUID()))
                 .andExpect(status().isOk());
     }
 
     @Test
-    @WithMockUser(authorities = "category:read")
+    @WithMockUser(authorities = "requisition:read")
     @DisplayName("slice: a domain not-found becomes a 404 with a specific errorCode, per the error contract")
     void missingRecord_mapsTo404WithErrorCode() throws Exception {
         UUID id = UUID.randomUUID();
-        when(categoryUseCase.getById(id)).thenThrow(new CategoryNotFoundException(id.toString()));
+        when(requisitionUseCase.getById(id)).thenThrow(new RequisitionNotFoundException(id));
 
-        assertError(mockMvc.perform(get("/api/v1/masterdata/categories/{id}", id)),
-                HttpStatus.NOT_FOUND, "CATEGORY_NOT_FOUND");
+        assertError(mockMvc.perform(get("/api/v1/purchase-requisitions/{id}", id)),
+                HttpStatus.NOT_FOUND, "NOT_FOUND");
     }
 
     @Test

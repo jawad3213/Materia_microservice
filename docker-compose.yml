@@ -60,14 +60,16 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      APP_MESSAGING_TYPE: ${APP_MESSAGING_TYPE}
-      # With APP_MESSAGING_TYPE=kafka: the outbox relay publishes committed events to materia.<context>.events.
-      APP_OUTBOX_RELAY_ENABLED: ${APP_OUTBOX_RELAY_ENABLED:-false}
+      # Events cross services through Kafka (master data keeps stock from procurement's events): the outbox relay
+      # publishes the committed events of the shared outbox to materia.<context>.events.
+      APP_MESSAGING_TYPE: kafka
+      APP_OUTBOX_RELAY_ENABLED: "true"
       # Verifies tokens only: identity alone signs them, and issues this service's own service tokens.
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       SERVICE_CLIENT_ID: monolith
       SERVICE_CLIENT_SECRET: ${SERVICE_CLIENT_MONOLITH_SECRET}
       GRPC_IDENTITY_TARGET: identity:9091
+      GRPC_MASTERDATA_TARGET: masterdata:9092
     volumes:
       - attachments_data:/app/data/attachments
     depends_on:
@@ -97,6 +99,7 @@ services:
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       SERVICE_CLIENT_MONOLITH_SECRET: ${SERVICE_CLIENT_MONOLITH_SECRET}
+      SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
       APP_BOOTSTRAP_ADMIN_EMAIL: ${APP_BOOTSTRAP_ADMIN_EMAIL:-}
       APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:-}
     depends_on:
@@ -108,8 +111,41 @@ services:
       - materia-net
 
   # -----------------------------------------------------------------
+  # Master data: materials, categories, suppliers, stock.
+  # REST on 8083 (through the gateway), gRPC masterdata.v1 on 9092 (for the other services). Keeps stock from
+  # procurement's events (Kafka) and raises replenishment requisitions in the backend (gRPC 9090).
+  # Needs the shared tables the backend's migrations create: started after it, and restarted until they exist.
+  # Build its jar first: cd backend && ./mvnw -pl masterdata-service -am package -DskipTests
+  # -----------------------------------------------------------------
+  masterdata:
+    build:
+      context: ./backend/masterdata-service
+      dockerfile: Dockerfile
+    container_name: materia-masterdata
+    restart: on-failure
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
+      GRPC_IDENTITY_TARGET: identity:9091
+      GRPC_MONOLITH_TARGET: backend:9090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      backend:
+        condition: service_started
+    networks:
+      - materia-net
+
+  # -----------------------------------------------------------------
   # API Gateway (Spring Cloud Gateway): the only way in to the services.
-  # Routes /api/v1/auth, /api/v1/employees and the JWK set to identity, the rest of /api to the backend;
+  # Routes /api/v1/auth, /api/v1/employees and the JWK set to identity, /api/v1/masterdata to master data, the rest
+  # of /api to the backend;
   # refuses invalid tokens, rate-limits clients.
   # Build its jar first: cd backend && ./mvnw -pl gateway-service -am package -DskipTests
   # -----------------------------------------------------------------
@@ -121,10 +157,13 @@ services:
     environment:
       GATEWAY_BACKEND_URI: http://backend:8080
       GATEWAY_IDENTITY_URI: http://identity:8082
+      GATEWAY_MASTERDATA_URI: http://masterdata:8083
     depends_on:
       backend:
         condition: service_started
       identity:
+        condition: service_started
+      masterdata:
         condition: service_started
     networks:
       - materia-net

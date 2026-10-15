@@ -4,8 +4,8 @@ import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
 import com.materia.backend.support.fixtures.TestAccount;
 import com.materia.backend.support.fixtures.TestIdentity;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineInput;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.DeliveryStatus;
@@ -33,14 +33,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class PurchaseOrderSignalsIT extends AbstractIntegrationTest {
 
     @Autowired private PurchaseOrderUseCase orders;
-    @Autowired private MaterialRepository materials;
+    @Autowired private TestMasterData materials;
     @Autowired private TestIdentity users;
     @Autowired private ApplicationEvents events;
 
-    private UUID draftOrder(Material material) {
+    private UUID draftOrder(TestMaterial material) {
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialId(material.getId());
-        line.setMaterialCode(material.getCode().getValue());
+        line.setMaterialCode(material.getCode());
         line.setQuantity(5);
         line.setUnitPrice(Money.of("2.00", CurrencyCode.MAD));
         CreatePurchaseOrderInput input = new CreatePurchaseOrderInput();
@@ -56,7 +56,7 @@ class PurchaseOrderSignalsIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("signals: submit, confirm and receipt each publish exactly one event on the event bus (US5-1 to US5-3)")
     void lifecycle_publishesEachSignalOnce() {
-        Material material = materials.save(aMaterial().stock(0).build());
+        TestMaterial material = materials.save(aMaterial().stock(0).build());
         TestAccount receiver = users.save(aReceiver().build());
         UUID id = draftOrder(material);
 

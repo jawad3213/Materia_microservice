@@ -12,7 +12,7 @@ import com.materia.backend.contexts.goodsReceipt.domain.exceptions.GoodsReceiptN
 import com.materia.backend.contexts.goodsReceipt.domain.exceptions.GoodsReceiptValidationException;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptEventPublisher;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptRepository;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrder;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.OrderStatus;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.out.PurchaseOrderEventPublisher;
@@ -33,6 +33,7 @@ import java.util.UUID;
 
 import static com.materia.backend.support.fixtures.CrossContextWiring.*;
 import static com.materia.backend.support.fixtures.GoodsReceiptFixtures.aReceipt;
+import static com.materia.backend.support.fixtures.MaterialFixtures.aMaterial;
 import static com.materia.backend.support.fixtures.PurchaseOrderFixtures.DEFAULT_RECEIVER_ID;
 import static com.materia.backend.support.fixtures.PurchaseOrderFixtures.anOrder;
 import static org.junit.jupiter.api.Assertions.*;
@@ -50,7 +51,7 @@ class GoodsReceiptServiceModuleTest {
     @Mock private GoodsReceiptEventPublisher receiptEvents;
     @Mock private GoodsReceiptCodeGeneratorService codeGenerator;
     @Mock private PurchaseOrderRepository orders;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private PurchaseOrderEventPublisher orderEvents;
 
     private GoodsReceiptService service;
@@ -208,7 +209,7 @@ class GoodsReceiptServiceModuleTest {
         service.delete(receipt.getId(), OWNER);
 
         verify(receipts).deleteById(receipt.getId());
-        verifyNoInteractions(materials);
+        assertEquals(0, materials.movements(), "nothing touches stock");
     }
 
     @Test
@@ -314,9 +315,7 @@ class GoodsReceiptServiceModuleTest {
     void complete_withRejection_publishesRejectedEvent() {
         GoodsReceipt receipt = aReceipt(order).receiving(0, 10, 10, "Wrong item").build();
         when(receipts.findById(receipt.getId())).thenReturn(Optional.of(receipt));
-        when(materials.findById(any())).thenReturn(Optional.of(
-                com.materia.backend.support.fixtures.MaterialFixtures.aMaterial().stock(0).build()));
-        when(materials.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        materials.everyLookupFinds(aMaterial().stock(0).build());
         when(orders.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.complete(receipt.getId(), OWNER);

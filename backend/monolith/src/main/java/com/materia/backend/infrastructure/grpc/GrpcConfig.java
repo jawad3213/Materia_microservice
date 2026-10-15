@@ -1,6 +1,5 @@
 package com.materia.backend.infrastructure.grpc;
 
-import com.materia.backend.common.domain.ports.out.UserDisplayNames;
 import com.materia.grpc.auth.AuthenticationServerInterceptor;
 import com.materia.grpc.auth.CallerTokenClientInterceptor;
 import com.materia.grpc.auth.TokenVerifier;
@@ -9,8 +8,6 @@ import com.materia.grpc.errors.ExceptionTranslatingServerInterceptor;
 import com.materia.grpc.trace.TraceIdClientInterceptor;
 import com.materia.grpc.trace.TraceIdServerInterceptor;
 import com.materia.proto.finance.v1.FinanceMetricsGrpc;
-import com.materia.proto.identity.v1.ServiceTokensGrpc;
-import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
 import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
@@ -18,13 +15,11 @@ import com.materia.proto.procurement.v1.ProcurementMetricsGrpc;
 import com.materia.proto.procurement.v1.PurchaseOrderLookupGrpc;
 import com.materia.proto.procurement.v1.ReplenishmentGrpc;
 import io.grpc.BindableService;
-import io.grpc.ClientInterceptor;
 import io.grpc.ManagedChannel;
 import io.grpc.Server;
 import io.grpc.ServerInterceptors;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
-import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.SmartLifecycle;
@@ -36,6 +31,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -46,17 +42,17 @@ import java.util.concurrent.TimeUnit;
  *   <li>The contexts still in this application serve their contracts ({@code adapters/in/grpc}) on an in-process
  *   server and call each other through stubs on an in-process channel. Server and channel run calls on the caller's
  *   thread, so a call joins the caller's transaction as the direct call it replaced.</li>
- *   <li>Identity is a service of its own: its contracts (UserDirectory, ServiceTokens) are reached over the network
- *   at {@code app.grpc.identity.target}, with a short deadline.</li>
+ *   <li>The same contracts are served to the other services on {@code app.grpc.server.port} (master data raises
+ *   replenishment requisitions here).</li>
+ *   <li>Master data is a service of its own: its contracts (MaterialCatalog, MasterDataMetrics) are reached over the
+ *   network at {@code app.grpc.masterdata.target}, with a short deadline. Identity's are wired by the platform
+ *   ({@link IdentityClientConfig}).</li>
  * </ul>
  *
- * <p>Every channel installs the interceptors every service uses (caller token, trace id, deadline); the one to
- * identity's ServiceTokens has no caller token, since asking for a service token must not need one.
+ * <p>Every channel installs the interceptors every service uses (caller token, trace id, deadline).
  */
 @Configuration
 public class GrpcConfig {
-
-    private static final String IN_PROCESS_PREFIX = "in-process:";
 
     /** Unique per application context, so several test contexts can live in one JVM. */
     private final String serverName = "materia-" + UUID.randomUUID();
@@ -71,53 +67,33 @@ public class GrpcConfig {
         return new InProcessGrpcServer(server.build());
     }
 
-    // ---- Identity (another service) ----
-
-    /**
-     * {@code host:port} of identity's gRPC server (e.g. {@code identity:9091}), or {@code in-process:<name>} for an
-     * in-process server of that name (tests).
-     */
-    private static ManagedChannel channelTo(String target, ClientInterceptor... interceptors) {
-        if (target.startsWith(IN_PROCESS_PREFIX)) {
-            return InProcessChannelBuilder.forName(target.substring(IN_PROCESS_PREFIX.length()))
-                    .directExecutor().intercept(interceptors).build();
-        }
-        return NettyChannelBuilder.forTarget(target).usePlaintext().intercept(interceptors).build();
-    }
-
-    @Bean(destroyMethod = "shutdownNow")
-    public ManagedChannel identityServiceTokenChannel(@Value("${app.grpc.identity.target}") String target,
-                                                      @Value("${app.grpc.identity.deadline:5s}") Duration deadline) {
-        return channelTo(target, new TraceIdClientInterceptor(), new DefaultDeadlineClientInterceptor(deadline));
-    }
-
+    /** The same contracts, for the other services. */
     @Bean
-    public OutgoingCallerToken outgoingCallerToken(
-            @Qualifier("identityServiceTokenChannel") ManagedChannel identityServiceTokenChannel,
-            @Value("${app.service-client.id}") String clientId,
-            @Value("${app.service-client.secret}") String clientSecret) {
-        return new OutgoingCallerToken(ServiceTokensGrpc.newBlockingStub(identityServiceTokenChannel), clientId,
-                clientSecret);
+    public GrpcNetworkServer grpcNetworkServer(List<BindableService> services, TokenVerifier verifier,
+                                               @Value("${app.grpc.server.port:9090}") int port) {
+        return new GrpcNetworkServer("Monolith", port, services, verifier, Set.of());
     }
 
+    // ---- Master data (another service) ----
+
     @Bean(destroyMethod = "shutdownNow")
-    public ManagedChannel identityChannel(OutgoingCallerToken tokens,
-                                          @Value("${app.grpc.identity.target}") String target,
-                                          @Value("${app.grpc.identity.deadline:5s}") Duration deadline) {
-        return channelTo(target, new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
+    public ManagedChannel masterDataChannel(OutgoingCallerToken tokens,
+                                            @Value("${app.grpc.masterdata.target}") String target,
+                                            @Value("${app.grpc.masterdata.deadline:5s}") Duration deadline) {
+        return GrpcChannels.to(target, new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
                 new DefaultDeadlineClientInterceptor(deadline));
     }
 
     @Bean
-    public UserDirectoryGrpc.UserDirectoryBlockingStub userDirectoryStub(
-            @Qualifier("identityChannel") ManagedChannel identityChannel) {
-        return UserDirectoryGrpc.newBlockingStub(identityChannel);
+    public MaterialCatalogGrpc.MaterialCatalogBlockingStub materialCatalogStub(
+            @Qualifier("masterDataChannel") ManagedChannel masterDataChannel) {
+        return MaterialCatalogGrpc.newBlockingStub(masterDataChannel);
     }
 
-    /** Names in the change history and on attachments, from identity's directory. */
     @Bean
-    public UserDisplayNames userDisplayNames(UserDirectoryGrpc.UserDirectoryBlockingStub userDirectoryStub) {
-        return new GrpcUserDisplayNames(userDirectoryStub);
+    public MasterDataMetricsGrpc.MasterDataMetricsBlockingStub masterDataMetricsStub(
+            @Qualifier("masterDataChannel") ManagedChannel masterDataChannel) {
+        return MasterDataMetricsGrpc.newBlockingStub(masterDataChannel);
     }
 
     // ---- The contexts still in this application ----
@@ -131,11 +107,6 @@ public class GrpcConfig {
                 .intercept(new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
                         new DefaultDeadlineClientInterceptor(deadline))
                 .build();
-    }
-
-    @Bean
-    public MaterialCatalogGrpc.MaterialCatalogBlockingStub materialCatalogStub(ManagedChannel grpcChannel) {
-        return MaterialCatalogGrpc.newBlockingStub(grpcChannel);
     }
 
     @Bean
@@ -161,11 +132,6 @@ public class GrpcConfig {
     @Bean
     public FinanceMetricsGrpc.FinanceMetricsBlockingStub financeMetricsStub(ManagedChannel grpcChannel) {
         return FinanceMetricsGrpc.newBlockingStub(grpcChannel);
-    }
-
-    @Bean
-    public MasterDataMetricsGrpc.MasterDataMetricsBlockingStub masterDataMetricsStub(ManagedChannel grpcChannel) {
-        return MasterDataMetricsGrpc.newBlockingStub(grpcChannel);
     }
 
     /** Started before the application takes requests or runs its start-up jobs, stopped after. */

@@ -4,12 +4,7 @@ import com.materia.backend.contexts.goodsReceipt.application.services.GoodsRecei
 import com.materia.backend.contexts.goodsReceipt.domain.valueObjects.ReceiptCode;
 import com.materia.backend.contexts.invoice.application.services.InvoiceCodeGeneratorService;
 import com.materia.backend.contexts.invoice.domain.valueObjects.InvoiceCode;
-import com.materia.backend.contexts.masterData.application.services.CategoryCodeGeneratorService;
-import com.materia.backend.contexts.masterData.application.services.MaterialCodeGeneratorService;
-import com.materia.backend.contexts.masterData.application.services.SupplierCodeGeneratorService;
-import com.materia.backend.contexts.masterData.domain.enums.MaterialType;
 import com.materia.backend.common.domain.ports.out.CodeSequenceRepository;
-import com.materia.backend.contexts.masterData.domain.valueObjects.MaterialCode;
 import com.materia.backend.contexts.payment.application.services.PaymentCodeGeneratorService;
 import com.materia.backend.contexts.payment.domain.valueObjects.PaymentCode;
 import com.materia.backend.contexts.purchaseOrder.application.services.PurchaseOrderCodeGeneratorService;
@@ -38,33 +33,6 @@ class YearBasedCodeGenerationTest {
             sequences.put(prefix, current + 1);
             return current;
         }
-    }
-
-    @Test
-    @DisplayName("MaterialCode supports year-based formats and backward compatibility")
-    void testMaterialCodeValidationAndParsing() {
-        int currentYear = Year.now().getValue();
-
-        MaterialCode withYear = MaterialCode.of("MAT-" + currentYear + "-0001");
-        assertEquals("MAT", withYear.getPrefix());
-        assertEquals("0001", withYear.getNumber());
-        assertEquals(1, withYear.getNumberAsInt());
-        assertEquals(currentYear, withYear.getYear());
-
-        MaterialCode lowerCase = MaterialCode.of("material-" + currentYear + "-0005");
-        assertEquals("material", lowerCase.getPrefix());
-        assertEquals(5, lowerCase.getNumberAsInt());
-
-        MaterialCode legacy = MaterialCode.of("MAT-0042");
-        assertEquals("MAT", legacy.getPrefix());
-        assertEquals(42, legacy.getNumberAsInt());
-        assertEquals(-1, legacy.getYear());
-
-        MaterialCode generated = MaterialCode.fromPrefixAndNumber("MAT", 7);
-        assertEquals(String.format("MAT-%d-0007", currentYear), generated.getValue());
-
-        MaterialCode next = MaterialCode.generateNext(withYear);
-        assertEquals(String.format("MAT-%d-0002", currentYear), next.getValue());
     }
 
     @Test
@@ -135,12 +103,6 @@ class YearBasedCodeGenerationTest {
         InMemoryCodeSequenceRepository repo = new InMemoryCodeSequenceRepository();
         int currentYear = Year.now().getValue();
 
-        MaterialCodeGeneratorService matService = new MaterialCodeGeneratorService(repo);
-        MaterialCode mat1 = matService.generateCode(MaterialType.RAW_MATERIAL);
-        assertEquals(String.format("RMT-%d-0001", currentYear), mat1.getValue());
-        MaterialCode mat2 = matService.generateCode(MaterialType.RAW_MATERIAL);
-        assertEquals(String.format("RMT-%d-0002", currentYear), mat2.getValue());
-
         PurchaseOrderCodeGeneratorService poService = new PurchaseOrderCodeGeneratorService(repo);
         OrderCode po1 = poService.generateCode();
         assertEquals(String.format("PO-%d-0001", currentYear), po1.getValue());
@@ -166,13 +128,5 @@ class YearBasedCodeGenerationTest {
         ReturnToVendorCodeGeneratorService rtvService = new ReturnToVendorCodeGeneratorService(repo);
         ReturnCode rtv1 = rtvService.generateCode();
         assertEquals(String.format("RTN-%d-0001", currentYear), rtv1.getValue());
-
-        SupplierCodeGeneratorService supService = new SupplierCodeGeneratorService(repo);
-        String sup1 = supService.generateCode();
-        assertEquals(String.format("SUP-%d-0001", currentYear), sup1);
-
-        CategoryCodeGeneratorService catService = new CategoryCodeGeneratorService(repo);
-        String cat1 = catService.generateCode();
-        assertEquals(String.format("CAT-%d-0001", currentYear), cat1);
     }
 }

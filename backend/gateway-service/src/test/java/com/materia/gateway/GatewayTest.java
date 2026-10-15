@@ -52,17 +52,20 @@ class GatewayTest {
     private static final List<Map<String, String>> RECEIVED = new CopyOnWriteArrayList<>();
     private static final HttpServer BACKEND = service("backend");
     private static final HttpServer IDENTITY = service("identity");
+    private static final HttpServer MASTER_DATA = service("masterdata");
 
     @DynamicPropertySource
     static void routes(DynamicPropertyRegistry registry) {
         registry.add("gateway.backend-uri", () -> "http://localhost:" + BACKEND.getAddress().getPort());
         registry.add("gateway.identity-uri", () -> "http://localhost:" + IDENTITY.getAddress().getPort());
+        registry.add("gateway.master-data-uri", () -> "http://localhost:" + MASTER_DATA.getAddress().getPort());
     }
 
     @AfterAll
     static void stop() {
         BACKEND.stop(0);
         IDENTITY.stop(0);
+        MASTER_DATA.stop(0);
     }
 
     @Autowired private WebTestClient client;
@@ -175,10 +178,27 @@ class GatewayTest {
                 "/api/v1/employees/42 -> identity",
                 "/api/v1/audit/Employee/42 -> identity",
                 "/api/v1/audit/User/42 -> identity",
-                "/api/v1/audit/Material/42 -> backend",
+                "/api/v1/audit/Material/42 -> masterdata",
                 "/api/v1/audit -> backend",
                 "/api/v1/invoices -> backend",
                 "/api/v1/authors -> backend");
+    }
+
+    @Test
+    @DisplayName("gateway: materials, categories, suppliers and their history go to master data")
+    void masterDataPaths_goToMasterData() {
+        String token = validToken();
+        for (String path : List.of("/api/v1/masterdata/materials", "/api/v1/masterdata/suppliers/42",
+                "/api/v1/audit/Material/42", "/api/v1/audit/Category/42", "/api/v1/audit/PurchaseOrder/42")) {
+            client.get().uri(path).header("Authorization", "Bearer " + token).exchange().expectStatus().isOk();
+        }
+
+        assertThat(RECEIVED).extracting(r -> r.get("path") + " -> " + r.get("service")).containsExactly(
+                "/api/v1/masterdata/materials -> masterdata",
+                "/api/v1/masterdata/suppliers/42 -> masterdata",
+                "/api/v1/audit/Material/42 -> masterdata",
+                "/api/v1/audit/Category/42 -> masterdata",
+                "/api/v1/audit/PurchaseOrder/42 -> backend");
     }
 
     @Test

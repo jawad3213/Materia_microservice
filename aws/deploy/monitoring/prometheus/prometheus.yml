@@ -23,6 +23,12 @@ scrape_configs:
     static_configs:
       - targets: ["identity:8081"]
 
+  # Master data: catalogue and stock management, the nightly reorder check
+  - job_name: masterdata
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["masterdata:8081"]
+
   # The API gateway: every request from outside, refusals (401, 429) included
   - job_name: gateway
     metrics_path: /actuator/prometheus

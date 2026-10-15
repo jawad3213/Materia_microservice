@@ -3,7 +3,6 @@ package com.materia.backend.gateway.exception;
 import com.materia.backend.common.application.exceptions.BusinessException;
 import com.materia.backend.common.application.exceptions.NotFoundException;
 import com.materia.backend.common.application.exceptions.ValidationException;
-import com.materia.backend.contexts.masterData.domain.exceptions.*;
 import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,8 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * context's own advice first ({@code @Order(HIGHEST_PRECEDENCE)}), {@link GlobalExceptionHandler} last.
  *
  * <p>Prevents recurrence of FINDING-005 (DuplicateMaterialCodeException -> 500),
- * FINDING-006 (AccountLockedException -> 500), and FINDING-007 (InvalidCredentialsException -> 500); the auth and
- * employee exceptions (FINDING-006, -007) are guarded by identity-service's copy of this test.
+ * FINDING-006 (AccountLockedException -> 500), and FINDING-007 (InvalidCredentialsException -> 500); the
+ * auth, employee and master data exceptions (FINDING-005, -006, -007) are guarded by their services' copies of
+ * this test.
  */
 class ExceptionMappingGuardTest {
 
@@ -86,11 +86,6 @@ class ExceptionMappingGuardTest {
             NotFoundException.class,
             ValidationException.class,
 
-            // Catalogue & Materials (US3, US5)
-            DuplicateMaterialCodeException.class,
-            MaterialNotFoundException.class,
-            InsufficientStockException.class,
-
             // Requisitions (US2)
             RequisitionBusinessException.class,
             RequisitionNotFoundException.class,
@@ -117,14 +112,6 @@ class ExceptionMappingGuardTest {
                     .isNotNull()
                     .isNotEqualTo(fallbackMethod);
         }
-    }
-
-    @Test
-    @DisplayName("exception guard: FINDING-005 DuplicateMaterialCodeException resolves to conflict handler")
-    void duplicateMaterialCodeException_doesNotMapTo500() {
-        Method resolved = resolver.resolveMethodByExceptionType(DuplicateMaterialCodeException.class);
-        assertThat(resolved).isNotNull();
-        assertThat(resolved.getName()).isEqualTo("handleDuplicateMaterialCodeException");
     }
 
     @Test

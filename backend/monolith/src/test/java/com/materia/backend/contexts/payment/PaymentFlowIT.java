@@ -13,8 +13,8 @@ import com.materia.backend.contexts.invoice.application.dtos.InvoiceOutput;
 import com.materia.backend.contexts.invoice.domain.enums.InvoiceStatus;
 import com.materia.backend.contexts.invoice.domain.enums.InvoiceType;
 import com.materia.backend.contexts.invoice.domain.ports.in.InvoiceUseCase;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.contexts.payment.application.dtos.CreatePaymentInput;
 import com.materia.backend.contexts.payment.application.dtos.CreatePaymentLineInput;
 import com.materia.backend.contexts.payment.application.dtos.PaymentOutput;
@@ -53,7 +53,7 @@ class PaymentFlowIT extends AbstractIntegrationTest {
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private InvoiceUseCase invoices;
     @Autowired private PaymentUseCase payments;
-    @Autowired private MaterialRepository materials;
+    @Autowired private TestMasterData materials;
     @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
@@ -64,11 +64,11 @@ class PaymentFlowIT extends AbstractIntegrationTest {
 
     /** A verified invoice of 32.00 MAD (6 × 5.00 + 2.00 tax) for an order of the given supplier. */
     private InvoiceOutput verifiedInvoice(UUID supplierId) {
-        Material material = materials.save(aMaterial().stock(0).build());
+        TestMaterial material = materials.save(aMaterial().stock(0).build());
         TestAccount receiver = users.save(aReceiver().build());
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialId(material.getId());
-        line.setMaterialCode(material.getCode().getValue());
+        line.setMaterialCode(material.getCode());
         line.setMaterialName(material.getName());
         line.setQuantity(10);
         line.setUnitPrice(Money.of("5.00", CurrencyCode.MAD));

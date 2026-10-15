@@ -15,7 +15,7 @@ locals {
 
   # Repositories whose images this environment promotes (prod: staging's), same account and region
   promotion_source_repository_arns = var.promote_from_environment == "" ? [] : [
-    for service in ["backend", "identity", "gateway", "frontend"] :
+    for service in ["backend", "identity", "masterdata", "gateway", "frontend"] :
     "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project}-${var.promote_from_environment}-${service}"
   ]
 
@@ -38,10 +38,11 @@ locals {
     SPRING_JPA_BATCH_SIZE                   = "50"
     SPRING_JPA_ORDER_INSERTS                = "true"
     SPRING_JPA_ORDER_UPDATES                = "true"
-    APP_MESSAGING_TYPE                      = "spring"
+    APP_MESSAGING_TYPE                      = "kafka"
+    SPRING_KAFKA_BOOTSTRAP_SERVERS          = "kafka:29092"
     SPRING_KAFKA_CONSUMER_GROUP_ID          = "materia-${var.environment}"
     SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET = "earliest"
-    SPRING_KAFKA_LISTENER_AUTO_STARTUP      = "false"
+    SPRING_KAFKA_LISTENER_AUTO_STARTUP      = "true"
     JWT_EXPIRATION_MS                       = "900000"
     SPRINGDOC_API_DOCS_PATH                 = "/v3/api-docs"
     SPRINGDOC_SWAGGER_UI_PATH               = "/swagger-ui.html"
@@ -115,6 +116,12 @@ resource "random_password" "service_client_monolith" {
   special = false # the value goes through a docker compose .env file
 }
 
+# The secret master data presents to identity for its service tokens.
+resource "random_password" "service_client_masterdata" {
+  length  = 48
+  special = false # the value goes through a docker compose .env file
+}
+
 # Grafana's admin account (aws/deploy/docker-compose.yml); Grafana is reached through an SSM port forward only.
 resource "random_password" "grafana_admin" {
   length  = 32
@@ -147,12 +154,13 @@ module "app_parameters" {
   parameters = merge(local.default_app_config, local.bootstrap_admin.config, var.app_config)
   secure_parameters = merge(
     {
-      POSTGRES_PASSWORD              = random_password.postgres.result
-      JWT_PRIVATE_KEY                = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
-      JWT_PUBLIC_KEY                 = base64encode(tls_private_key.jwt.public_key_pem)
-      GRAFANA_ADMIN_PASSWORD         = random_password.grafana_admin.result
-      SERVICE_CLIENT_SECRET          = random_password.service_client_monolith.result
-      SERVICE_CLIENT_MONOLITH_SECRET = random_password.service_client_monolith.result
+      POSTGRES_PASSWORD                = random_password.postgres.result
+      JWT_PRIVATE_KEY                  = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
+      JWT_PUBLIC_KEY                   = base64encode(tls_private_key.jwt.public_key_pem)
+      GRAFANA_ADMIN_PASSWORD           = random_password.grafana_admin.result
+      SERVICE_CLIENT_SECRET            = random_password.service_client_monolith.result
+      SERVICE_CLIENT_MONOLITH_SECRET   = random_password.service_client_monolith.result
+      SERVICE_CLIENT_MASTERDATA_SECRET = random_password.service_client_masterdata.result
     },
     local.bootstrap_admin.secrets,
     var.extra_secrets,

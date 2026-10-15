@@ -12,8 +12,8 @@ import com.materia.backend.contexts.goodsReceipt.domain.exceptions.GoodsReceiptV
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptEventPublisher;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptRepository;
 import com.materia.backend.contexts.goodsReceipt.domain.valueObjects.ReceiptCode;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrder;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrderLine;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.DeliveryStatus;
@@ -58,12 +58,12 @@ class GoodsReceiptServiceReceivingTest {
     @Mock private GoodsReceiptEventPublisher receiptEvents;
     @Mock private GoodsReceiptCodeGeneratorService codeGenerator;
     @Mock private PurchaseOrderRepository orders;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private PurchaseOrderEventPublisher orderEvents;
 
     private GoodsReceiptService service;
     private PurchaseOrder order;
-    private Material material;
+    private TestMaterial material;
 
     @BeforeEach
     void setUp() {
@@ -78,8 +78,7 @@ class GoodsReceiptServiceReceivingTest {
         when(orders.save(any(PurchaseOrder.class))).thenAnswer(inv -> inv.getArgument(0));
         order = receivable(OrderStatus.READY_FOR_RECEIPT);
         material = aMaterial().stock(20).build();
-        when(materials.findById(any())).thenReturn(Optional.of(material));
-        when(materials.save(any(Material.class))).thenAnswer(inv -> inv.getArgument(0));
+        materials.everyLookupFinds(material);
     }
 
     private PurchaseOrder receivable(OrderStatus status) {
@@ -192,7 +191,7 @@ class GoodsReceiptServiceReceivingTest {
         assertEquals(order.getSupplierName(), out.getSupplierName());
         assertEquals(order.getOrderCode().getValue(), out.getPurchaseOrderCode());
         assertEquals(ReceiptStatus.DRAFT.getCode(), out.getStatus());
-        verifyNoInteractions(materials);
+        assertEquals(0, materials.movements(), "nothing touches stock");
     }
 
     // ---- Validation (complete) ----
@@ -247,7 +246,7 @@ class GoodsReceiptServiceReceivingTest {
         service.complete(receipt.getId(), RECEIVER);
 
         assertEquals(20, material.getCurrentStock());
-        verify(materials, never()).save(any());
+        assertEquals(0, materials.movements(), "no stock movement");
     }
 
     @Test
@@ -266,8 +265,7 @@ class GoodsReceiptServiceReceivingTest {
     @Test
     @DisplayName("validate: a material that no longer exists aborts validation before the order changes")
     void complete_missingMaterial_isRefused() {
-        when(materials.findById(any())).thenReturn(Optional.empty());
-        when(materials.findByCode(any())).thenReturn(Optional.empty());
+        materials.everyLookupFinds(null);
         GoodsReceipt receipt = storedDraft(aReceipt(order).build());
 
         assertThrows(GoodsReceiptValidationException.class, () -> service.complete(receipt.getId(), RECEIVER));

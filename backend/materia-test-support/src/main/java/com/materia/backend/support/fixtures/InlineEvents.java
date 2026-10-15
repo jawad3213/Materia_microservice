@@ -33,7 +33,11 @@ public final class InlineEvents implements ApplicationEventPublisher {
     public void publishEvent(Object event) {
         if (!(event instanceof DomainEvent domainEvent)) return;
         published.add(domainEvent);
-        IntegrationEvent integrationEvent = InProcessIntegrationEvents.toIntegrationEvent(domainEvent, objectMapper);
+        deliver(InProcessIntegrationEvents.toIntegrationEvent(domainEvent, objectMapper));
+    }
+
+    /** Hands an envelope to the registered handlers, as one from another service arrives (through Kafka). */
+    public void deliver(IntegrationEvent integrationEvent) {
         for (IntegrationEventHandler handler : List.copyOf(handlers)) {
             if (handler.handles(integrationEvent)) handler.handle(integrationEvent);
         }

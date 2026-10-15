@@ -7,9 +7,8 @@ import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
-import com.materia.backend.contexts.masterData.application.services.ReorderService;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderOutput;
@@ -23,6 +22,8 @@ import com.materia.backend.contexts.purchaseRequisition.domain.enums.Requisition
 import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.RequisitionBusinessException;
 import com.materia.backend.contexts.purchaseRequisition.domain.ports.out.RequisitionRepository;
 import com.materia.backend.support.AbstractIntegrationTest;
+import com.materia.proto.procurement.v1.RaiseReplenishmentRequest;
+import com.materia.proto.procurement.v1.ReplenishmentGrpc;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.DisplayName;
@@ -46,10 +47,11 @@ class ProcurementChainIT extends AbstractIntegrationTest {
 
     @Autowired private RequisitionService requisitionService;
     @Autowired private RequisitionRepository requisitions;
-    @Autowired private ReorderService reorder;
+    /** procurement.v1.Replenishment, which master data calls for a manual reorder ("1-click"). */
+    @Autowired private ReplenishmentGrpc.ReplenishmentBlockingStub replenishment;
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private GoodsReceiptUseCase receipts;
-    @Autowired private MaterialRepository materials;
+    @Autowired private TestMasterData materials;
     @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
@@ -58,24 +60,24 @@ class ProcurementChainIT extends AbstractIntegrationTest {
         em.clear();
     }
 
-    private Material material() {
+    private TestMaterial material() {
         return materials.save(aMaterial().stock(0).price("5.00").build());
     }
 
-    private Material reload(Material m) {
+    private TestMaterial reload(TestMaterial m) {
         flushAndClear();
-        return materials.findById(m.getId()).orElseThrow();
+        return m;
     }
 
-    private static int onOrder(Material m) {
-        return m.getStockOnOrder() != null ? m.getStockOnOrder() : 0;
+    private static int onOrder(TestMaterial m) {
+        return m.getStockOnOrder();
     }
 
     /** An approved requisition for the given materials and quantities, requested by "requester-1". */
     private Requisition approvedRequisition(Object... materialAndQuantity) {
         var builder = aRequisition().requestedBy("requester-1").inStatus(RequisitionStatus.APPROVED);
         for (int i = 0; i < materialAndQuantity.length; i += 2) {
-            builder.withLine(new RequisitionLine(snapshotOf((Material) materialAndQuantity[i]), (Integer) materialAndQuantity[i + 1],
+            builder.withLine(new RequisitionLine(snapshotOf((TestMaterial) materialAndQuantity[i]), (Integer) materialAndQuantity[i + 1],
                     LocalDate.now().plusDays(10)));
         }
         Requisition saved = requisitions.save(builder.build());
@@ -83,10 +85,10 @@ class ProcurementChainIT extends AbstractIntegrationTest {
         return requisitions.findById(saved.getId()).orElseThrow();
     }
 
-    private static PurchaseOrderLineInput line(Material m, int quantity, UUID requisitionLineId) {
+    private static PurchaseOrderLineInput line(TestMaterial m, int quantity, UUID requisitionLineId) {
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialId(m.getId());
-        line.setMaterialCode(m.getCode().getValue());
+        line.setMaterialCode(m.getCode());
         line.setMaterialName(m.getName());
         line.setQuantity(quantity);
         line.setUnitPrice(Money.of("5.00", CurrencyCode.MAD));
@@ -141,12 +143,18 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("reorder: automatic and one-click requisitions are saved; the requester is the system or the user who clicked")
     void reorderRequisitions_areSavedWithARequester() {
-        Material auto = material();
-        Material manual = material();
+        TestMaterial auto = material();
+        TestMaterial manual = material();
         TestAccount buyer = users.save(aPurchaser().firstName("Bea").lastName("Buyer").build());
 
         String autoCode = requisitionService.createRequisitionFromReorder(snapshotOf(auto), 10, "Below safety stock", true);
-        reorder.triggerManualReorder(manual.getId(), 7, "Customer rush", buyer.getId().toString());
+        // Master data's manual reorder: a replenishment raised for the buyer.
+        replenishment.raiseReplenishment(RaiseReplenishmentRequest.newBuilder()
+                .setMaterialId(manual.getId().toString())
+                .setQuantity(7)
+                .setReason("Customer rush")
+                .setRequesterId(buyer.getId().toString())
+                .build());
         flushAndClear();
 
         Requisition automatic = requisitions.findByCode(autoCode).orElseThrow();
@@ -164,7 +172,7 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("on order: an order adds its quantity, a receipt removes what arrived, closing short releases the rest")
     void onOrder_followsTheOrder() {
-        Material m = material();
+        TestMaterial m = material();
         PurchaseOrderOutput order = orders.create(order(UUID.randomUUID(), null, line(m, 10, null)));
         assertEquals(10, onOrder(reload(m)));
 
@@ -176,7 +184,7 @@ class ProcurementChainIT extends AbstractIntegrationTest {
 
         String receiver = readyForReceipt(order.getId());
         receive(orders.getById(order.getId()), receiver, 7, 2);
-        Material afterReceipt = reload(m);
+        TestMaterial afterReceipt = reload(m);
         assertEquals(5, onOrder(afterReceipt), "7 received (5 accepted, 2 rejected) out of 12");
         assertEquals(5, afterReceipt.getCurrentStock(), "only accepted goods enter stock");
 
@@ -187,7 +195,7 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("on order: cancelling, rejecting or deleting an order releases its quantity")
     void onOrder_releasedWhenWithdrawn() {
-        Material m = material();
+        TestMaterial m = material();
         PurchaseOrderOutput cancelled = orders.create(order(UUID.randomUUID(), null, line(m, 4, null)));
         PurchaseOrderOutput rejected = orders.create(order(UUID.randomUUID(), null, line(m, 3, null)));
         PurchaseOrderOutput deleted = orders.create(order(UUID.randomUUID(), null, line(m, 2, null)));
@@ -214,8 +222,8 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("requisition match: more than requested, a missing line, a foreign line, another currency or another supplier is refused")
     void ordersMustMatchTheirRequisition() {
-        Material a = material();
-        Material b = material();
+        TestMaterial a = material();
+        TestMaterial b = material();
         Requisition requisition = approvedRequisition(a, 10, b, 5);
         UUID lineA = requisition.getLines().get(0).getId();
         UUID lineB = requisition.getLines().get(1).getId();
@@ -244,8 +252,8 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("requisition match: a requisition naming several suppliers must be split; one naming a supplier is ordered from it")
     void requisitionSuppliers() {
-        Material a = material();
-        Material b = material();
+        TestMaterial a = material();
+        TestMaterial b = material();
         Requisition requisition = approvedRequisition(a, 1, b, 1);
         UUID supplierA = UUID.randomUUID();
         requisition.getLines().get(0).setSupplierId(supplierA);
@@ -274,7 +282,7 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("receipts: what arrives on the order is recorded on the requisition line it was requested on")
     void receipts_updateTheRequisition() {
-        Material m = material();
+        TestMaterial m = material();
         Requisition requisition = approvedRequisition(m, 10);
         UUID requested = requisition.getLines().get(0).getId();
         PurchaseOrderOutput order = orders.create(order(UUID.randomUUID(), requisition.getId(), line(m, 10, requested)));
@@ -294,9 +302,9 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("persistence: changing, adding and removing lines on a saved requisition is stored (it used to be silently lost)")
     void requisitionLineChanges_arePersisted() {
-        Material a = material();
-        Material b = material();
-        Material c = material();
+        TestMaterial a = material();
+        TestMaterial b = material();
+        TestMaterial c = material();
         Requisition requisition = approvedRequisition(a, 2, b, 3);
         UUID keptLineId = requisition.getLines().get(0).getId();
 
@@ -310,8 +318,8 @@ class ProcurementChainIT extends AbstractIntegrationTest {
         assertEquals(2, reloaded.getLines().size());
         RequisitionLine kept = reloaded.getLines().stream().filter(l -> l.getId().equals(keptLineId)).findFirst().orElseThrow();
         assertEquals(9, kept.getQuantity(), "the existing line keeps its id and gets the new quantity");
-        assertTrue(reloaded.getLines().stream().anyMatch(l -> c.getCode().getValue().equals(l.getMaterialCode())), "new line stored");
-        assertTrue(reloaded.getLines().stream().noneMatch(l -> b.getCode().getValue().equals(l.getMaterialCode())), "removed line gone");
+        assertTrue(reloaded.getLines().stream().anyMatch(l -> c.getCode().equals(l.getMaterialCode())), "new line stored");
+        assertTrue(reloaded.getLines().stream().noneMatch(l -> b.getCode().equals(l.getMaterialCode())), "removed line gone");
     }
 
     // ---- 5. No self-approval ----

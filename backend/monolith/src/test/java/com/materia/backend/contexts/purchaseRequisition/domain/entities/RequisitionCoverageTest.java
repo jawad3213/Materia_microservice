@@ -2,7 +2,7 @@ package com.materia.backend.contexts.purchaseRequisition.domain.entities;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
+import com.materia.backend.support.fixtures.TestMaterial;
 import com.materia.backend.contexts.purchaseRequisition.domain.enums.RequisitionStatus;
 import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.RequisitionCurrencyMismatchException;
 import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.RequisitionInvalidStatusTransitionException;
@@ -323,12 +323,11 @@ class RequisitionCoverageTest {
     @Test
     @DisplayName("line from material: copies code, name, unit and price, and computes the total")
     void line_fromMaterial() {
-        Material m = aMaterial().price("4.00").build();
-        m.setId(UUID.randomUUID());
+        TestMaterial m = aMaterial().price("4.00").build();
 
         RequisitionLine line = new RequisitionLine(snapshotOf(m), 3, LocalDate.now().plusDays(2));
 
-        assertEquals(m.getCode().getValue(), line.getMaterialCode());
+        assertEquals(m.getCode(), line.getMaterialCode());
         assertEquals(m.getId(), line.getMaterialId());
         assertEquals(m.getName(), line.getMaterialName());
         assertEquals(m.getStandardPrice(), line.getStandardPrice());
@@ -342,9 +341,9 @@ class RequisitionCoverageTest {
     @Test
     @DisplayName("line from material: a material without price or unit leaves them empty")
     void line_fromBareMaterial() {
-        Material m = aMaterial().build();
+        TestMaterial m = aMaterial().build();
         m.setStandardPrice(null);
-        m.setUnitOfMeasure((String) null);
+        m.setUnitOfMeasureCode(null);
 
         RequisitionLine line = new RequisitionLine(snapshotOf(m), 1, null);
 
@@ -357,7 +356,7 @@ class RequisitionCoverageTest {
     @Test
     @DisplayName("line: material and a positive quantity are required; prices must be present and positive")
     void line_refusals() {
-        Material m = aMaterial().build();
+        TestMaterial m = aMaterial().build();
         assertThrows(IllegalArgumentException.class, () -> new RequisitionLine(null, 1, null));
         assertThrows(IllegalArgumentException.class, () -> new RequisitionLine(snapshotOf(m), 0, null));
         assertThrows(IllegalArgumentException.class, () -> new RequisitionLine(snapshotOf(m), null, null));

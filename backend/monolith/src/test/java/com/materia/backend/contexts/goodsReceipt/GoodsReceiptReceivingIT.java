@@ -12,8 +12,8 @@ import com.materia.backend.contexts.goodsReceipt.domain.enums.ReceiptStatus;
 import com.materia.backend.contexts.goodsReceipt.domain.exceptions.GoodsReceiptBusinessException;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptRepository;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineOutput;
@@ -49,7 +49,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Autowired private PurchaseOrderRepository orderRepository;
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private GoodsReceiptRepository receiptRepository;
-    @Autowired private MaterialRepository materials;
+    @Autowired private TestMasterData materials;
     @Autowired private TestIdentity users;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
@@ -66,13 +66,13 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
         }
     }
 
-    private Receivable receivableOrder(int[] quantities, Material... lineMaterials) {
+    private Receivable receivableOrder(int[] quantities, TestMaterial... lineMaterials) {
         TestAccount receiver = users.save(aReceiver().build());
         List<PurchaseOrderLineInput> lines = new ArrayList<>();
         for (int i = 0; i < lineMaterials.length; i++) {
             PurchaseOrderLineInput line = new PurchaseOrderLineInput();
             line.setMaterialId(lineMaterials[i].getId());
-            line.setMaterialCode(lineMaterials[i].getCode().getValue());
+            line.setMaterialCode(lineMaterials[i].getCode());
             line.setMaterialName(lineMaterials[i].getName());
             line.setQuantity(quantities[i]);
             line.setUnitPrice(Money.of("5.00", CurrencyCode.MAD));
@@ -118,9 +118,9 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
         return receipts.complete(created.getId(), r.receiverId());
     }
 
-    private int stockOf(Material m) {
+    private int stockOf(TestMaterial m) {
         flushAndClear();
-        return materials.findById(m.getId()).orElseThrow().getCurrentStock();
+        return m.getCurrentStock();
     }
 
     private PurchaseOrder reloadOrder(Receivable r) {
@@ -131,7 +131,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("receive: a full receipt completes the order as delivered and adds every accepted unit to stock (US3-1)")
     void fullReceipt_completesOrderAndStock() {
-        Material m = materials.save(aMaterial().stock(20).build());
+        TestMaterial m = materials.save(aMaterial().stock(20).build());
         Receivable r = receivableOrder(new int[]{10}, m);
 
         GoodsReceiptOutput validated = receiveAndValidate(r, new int[][]{{10, 0}});
@@ -147,7 +147,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("receive: a partial receipt leaves the remainder outstanding; the remainder later completes the order (US3-2, US3-3)")
     void partialThenRemainder_completesOrder() {
-        Material m = materials.save(aMaterial().stock(0).build());
+        TestMaterial m = materials.save(aMaterial().stock(0).build());
         Receivable r = receivableOrder(new int[]{10}, m);
 
         receiveAndValidate(r, new int[][]{{6, 0}});
@@ -162,7 +162,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("receive: rejected units never reach stock; only the accepted quantity is added (US3-4)")
     void rejectedUnits_doNotReachStock() {
-        Material m = materials.save(aMaterial().stock(5).build());
+        TestMaterial m = materials.save(aMaterial().stock(5).build());
         Receivable r = receivableOrder(new int[]{10}, m);
 
         receiveAndValidate(r, new int[][]{{10, 3}});
@@ -173,7 +173,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("receive: receiving beyond what remains across receipts is refused and stock is unchanged (US3-5)")
     void overReceipt_isRefused() {
-        Material m = materials.save(aMaterial().stock(0).build());
+        TestMaterial m = materials.save(aMaterial().stock(0).build());
         Receivable r = receivableOrder(new int[]{10}, m);
         receiveAndValidate(r, new int[][]{{8, 0}});
 
@@ -185,7 +185,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("receive: someone other than the assigned receiver cannot record a receipt (US3-6)")
     void nonAssignee_isRefused() {
-        Material m = materials.save(aMaterial().stock(0).build());
+        TestMaterial m = materials.save(aMaterial().stock(0).build());
         Receivable r = receivableOrder(new int[]{10}, m);
 
         assertThrows(AccessDeniedException.class,
@@ -195,7 +195,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("receive: a cancelled draft does not count towards received quantities and leaves stock untouched (US3-10)")
     void cancelledDraft_isNotCounted() {
-        Material m = materials.save(aMaterial().stock(0).build());
+        TestMaterial m = materials.save(aMaterial().stock(0).build());
         Receivable r = receivableOrder(new int[]{10}, m);
         GoodsReceiptOutput draft = receipts.create(receipt(r, r.receiverId(), new int[][]{{9, 0}}));
         receipts.cancel(draft.getId(), r.receiverId(), "Counted wrong");
@@ -209,8 +209,8 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("receive all: confirming receipt on the order records a validated receipt for exactly what was outstanding (US3-8)")
     void confirmReceipt_recordsRealReceipt() {
-        Material a = materials.save(aMaterial().stock(0).build());
-        Material b = materials.save(aMaterial().stock(1).build());
+        TestMaterial a = materials.save(aMaterial().stock(0).build());
+        TestMaterial b = materials.save(aMaterial().stock(1).build());
         Receivable r = receivableOrder(new int[]{10, 4}, a, b);
         receiveAndValidate(r, new int[][]{{7, 0}, {0, 0}});
 
@@ -230,7 +230,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @DisplayName("reads: receipts can be read outside a caller's transaction, as a web request does (F-014)")
     void reads_workWithoutCallerTransaction() {
-        Material m = materials.save(aMaterial().stock(0).build());
+        TestMaterial m = materials.save(aMaterial().stock(0).build());
         Receivable r = receivableOrder(new int[]{10}, m);
         GoodsReceiptOutput draft = receipts.create(receipt(r, r.receiverId(), new int[][]{{4, 0}}));
         try {
@@ -243,8 +243,8 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
             jdbc.update("delete from goods_receipts where id = ?", draft.getId());
             jdbc.update("delete from purchase_order_lines where purchase_order_id = ?", r.order().getId());
             jdbc.update("delete from purchase_orders where id = ?", r.order().getId());
-            jdbc.update("delete from materials where id = ?", m.getId());
-            jdbc.update("delete from users where id = ?::uuid", r.receiverId());
+            materials.remove(m.getId());
+            users.remove(java.util.UUID.fromString(r.receiverId()));
         }
     }
 
@@ -254,8 +254,8 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @DisplayName("indivisible: a validation that fails part-way leaves receipt, order and stock exactly as they were (FR-008)")
     void failedValidation_changesNothing() {
-        Material real = materials.save(aMaterial().stock(20).build());
-        Material ghost = aMaterial().stock(0).build(); // never saved: its lookup fails during validation
+        TestMaterial real = materials.save(aMaterial().stock(20).build());
+        TestMaterial ghost = aMaterial().stock(0).build(); // never saved: its lookup fails during validation
         Receivable r = receivableOrder(new int[]{10, 5}, real, ghost);
         GoodsReceiptOutput draft = receipts.create(receipt(r, r.receiverId(), new int[][]{{10, 0}, {5, 0}}));
         try {
@@ -266,16 +266,15 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
             PurchaseOrder order = orderRepository.findById(r.order().getId()).orElseThrow();
             assertEquals(OrderStatus.READY_FOR_RECEIPT, order.getStatus());
             assertEquals(DeliveryStatus.NOT_SHIPPED, order.getDeliveryStatus());
-            assertEquals(20, materials.findById(real.getId()).orElseThrow().getCurrentStock(),
+            assertEquals(20, real.getCurrentStock(),
                     "the first line's stock increase was not rolled back");
         } finally {
             jdbc.update("delete from goods_receipt_lines where goods_receipt_id = ?", draft.getId());
             jdbc.update("delete from goods_receipts where id = ?", draft.getId());
             jdbc.update("delete from purchase_order_lines where purchase_order_id = ?", r.order().getId());
             jdbc.update("delete from purchase_orders where id = ?", r.order().getId());
-            jdbc.update("delete from material_stock_movements where material_id = ?", real.getId());
-            jdbc.update("delete from materials where id = ?", real.getId());
-            jdbc.update("delete from users where id = ?::uuid", r.receiverId());
+            materials.remove(real.getId());
+            users.remove(java.util.UUID.fromString(r.receiverId()));
         }
     }
 }

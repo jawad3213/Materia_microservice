@@ -11,7 +11,7 @@ import com.materia.backend.contexts.goodsReceipt.domain.exceptions.GoodsReceiptV
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptEventPublisher;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.GoodsReceiptRepository;
 import com.materia.backend.contexts.goodsReceipt.domain.valueObjects.ReceiptCode;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterialCatalog;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrder;
 import com.materia.backend.contexts.purchaseOrder.domain.entities.PurchaseOrderLine;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.OrderStatus;
@@ -50,7 +50,7 @@ class GoodsReceiptServiceGuardsTest {
     @Mock private GoodsReceiptEventPublisher receiptEvents;
     @Mock private GoodsReceiptCodeGeneratorService codeGenerator;
     @Mock private PurchaseOrderRepository orders;
-    @Mock private MaterialRepository materials;
+    private final TestMaterialCatalog materials = new TestMaterialCatalog();
     @Mock private PurchaseOrderEventPublisher orderEvents;
 
     private GoodsReceiptService service;

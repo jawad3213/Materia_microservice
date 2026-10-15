@@ -9,6 +9,9 @@ import com.materia.backend.contexts.dashboard.application.dtos.DashboardOutput.K
 import com.materia.backend.contexts.dashboard.application.services.DashboardService;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel;
 import com.materia.backend.support.AbstractIntegrationTest;
+import com.materia.backend.support.fixtures.TestMasterData;
+import com.materia.backend.support.fixtures.TestMasterDataMetrics;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,6 +52,7 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private DashboardReadModel readModel;
+    @Autowired private TestMasterData masterData;
 
     private DashboardService service;
     private final StubFx fx = new StubFx();
@@ -65,13 +69,17 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
         fx.rates.put(CurrencyCode.EUR, new FxValuation(CurrencyCode.EUR, CurrencyCode.MAD, bd("10.80"), TODAY, FxValuation.LIVE));
         emptyDocumentTables();
 
-        supplier(acme, "Acme");
-        supplier(globex, "Globex");
-        material(bolts, "MAT-1", "Bolts", "Fasteners", 8, 10, null, "ACTIVE");
-        material(UUID.randomUUID(), "MAT-2", "Paint", "Coatings", 0, 5, null, "ACTIVE");
-        material(UUID.randomUUID(), "MAT-3", "Glue", null, 1, 4, 2, "ACTIVE");
-        material(UUID.randomUUID(), "MAT-4", "Old part", null, 0, 2, null, "OBSOLETE");
-        material(UUID.randomUUID(), "MAT-5", "Screws", "Fasteners", 50, 10, null, "ACTIVE");
+        // Master data's answers (its catalogue: MAT-1 Bolts and MAT-5 Screws are fasteners, MAT-2 Paint a coating;
+        // MAT-1, MAT-2 and MAT-3 Glue are below their reorder point, MAT-4 is obsolete): how it picks them is its own
+        // tests' business (JpaMaterialMetricsIT), what the dashboard makes of them is this test's.
+        UUID screws = UUID.randomUUID();
+        UUID paint = UUID.randomUUID();
+        masterData.metrics().answer(
+                List.of(new TestMasterDataMetrics.Alert(paint.toString(), "MAT-2", "Paint", 0, 5, null),
+                        new TestMasterDataMetrics.Alert(UUID.randomUUID().toString(), "MAT-3", "Glue", 1, 4, 2),
+                        new TestMasterDataMetrics.Alert(bolts.toString(), "MAT-1", "Bolts", 8, 10, null)),
+                Map.of(bolts.toString(), "Fasteners", paint.toString(), "Coatings", screws.toString(), "Fasteners"),
+                Map.of("MAT-1", "Fasteners", "MAT-2", "Coatings", "MAT-5", "Fasteners"));
 
         requisition("SUBMITTED", 1);
         requisition("SUBMITTED", 2);
@@ -100,6 +108,12 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
 
         returnToVendor("PENDING");
         returnToVendor("DRAFT");
+    }
+
+    /** The stand-in is shared by every test of the JVM. */
+    @AfterEach
+    void noMasterDataAnswers() {
+        masterData.metrics().answer(List.of(), Map.of(), Map.of());
     }
 
     // ---- Tests ----
@@ -267,8 +281,8 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
                 "delete from goods_receipt_lines", "delete from goods_receipts",
                 "update purchase_requisitions set purchase_order_id = null",
                 "delete from purchase_order_lines", "delete from purchase_orders",
-                "delete from purchase_requisition_lines", "delete from purchase_requisitions",
-                "delete from material_stock_movements", "delete from materials")) {
+                "delete from purchase_requisition_lines", "delete from purchase_requisitions"
+                )) {
             jdbc.update(sql);
         }
     }
@@ -292,18 +306,6 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
 
     private String code(String prefix) {
         return prefix + "-2026-" + String.format("%04d", 9000 + ++sequence);
-    }
-
-    private void supplier(UUID id, String name) {
-        jdbc.update("insert into suppliers (id, code, name, status, currency_code, created_at, version) "
-                + "values (?, ?, ?, 'ACTIVE', 'MAD', now(), 0)", id, code("SUP"), name);
-    }
-
-    private void material(UUID id, String code, String name, String category, int stock, int reorder, Integer safety, String status) {
-        jdbc.update("insert into materials (id, code, name, category_name, material_type, status, current_stock, "
-                        + "available_stock, reorder_point, safety_stock, stock_on_order, unit_of_measure, created_at, version) "
-                        + "values (?, ?, ?, ?, 'RAW_MATERIAL', ?, ?, ?, ?, ?, 0, 'PCE', now(), 0)",
-                id, code, name, category, status, stock, stock, reorder, safety);
     }
 
     private void requisition(String status, int hoursAgo) {

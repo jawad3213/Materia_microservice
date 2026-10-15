@@ -1,10 +1,11 @@
 package com.materia.backend.contexts.purchaseRequisition.infrastructure.seed;
 
 import com.materia.backend.common.infrastructure.seed.DevSeed;
+import com.materia.backend.common.domain.enums.CurrencyCode;
+import com.materia.backend.infrastructure.seed.DevCatalog;
+import com.materia.backend.infrastructure.seed.DevCatalog.SeedMaterial;
 import com.materia.backend.infrastructure.seed.DevUsers;
 import com.materia.backend.infrastructure.seed.DevUsers.SeedUser;
-import com.materia.backend.contexts.masterData.application.dtos.material.MaterialOutput;
-import com.materia.backend.contexts.masterData.domain.ports.in.MaterialUseCase;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.CreateRequisitionInput;
 import com.materia.backend.contexts.purchaseRequisition.domain.entities.RequisitionLine;
 import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.RequisitionUseCase;
@@ -84,12 +85,12 @@ public class DevRequisitionsSeeder implements ApplicationRunner {
     }
 
     private final RequisitionUseCase requisitions;
-    private final MaterialUseCase materials;
+    private final DevCatalog catalog;
     private final DevUsers users;
 
-    public DevRequisitionsSeeder(RequisitionUseCase requisitions, MaterialUseCase materials, DevUsers users) {
+    public DevRequisitionsSeeder(RequisitionUseCase requisitions, DevCatalog catalog, DevUsers users) {
         this.requisitions = requisitions;
-        this.materials = materials;
+        this.catalog = catalog;
         this.users = users;
     }
 
@@ -101,9 +102,8 @@ public class DevRequisitionsSeeder implements ApplicationRunner {
         }
         SeedUser purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
         SeedUser admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
-        List<MaterialOutput> orderable = materials.getAll().stream()
-                .filter(m -> "ACTIVE".equals(m.getStatus()) && "MAD".equalsIgnoreCase(m.getCurrencyCode()))
-                .filter(m -> m.getSupplierId() != null)
+        List<SeedMaterial> orderable = catalog.orderableMaterials().stream()
+                .filter(m -> m.pricedIn(CurrencyCode.MAD))
                 .toList();
         if (purchaser == null || admin == null || orderable.isEmpty()) {
             log.warn("[DEV-SEED] No requisition seeded: the dev accounts or orderable materials are missing");
@@ -150,23 +150,23 @@ public class DevRequisitionsSeeder implements ApplicationRunner {
      * Up to two materials of the theme's categories from the supplier offering the most of them (one supplier per
      * requisition, so it converts into one order). Falls back to any orderable material when the data has none.
      */
-    private static List<MaterialOutput> linesFor(Theme theme, List<MaterialOutput> orderable) {
-        List<MaterialOutput> candidates = orderable.stream()
-                .filter(m -> theme.categories().contains(m.getCategoryName()))
+    private static List<SeedMaterial> linesFor(Theme theme, List<SeedMaterial> orderable) {
+        List<SeedMaterial> candidates = orderable.stream()
+                .filter(m -> theme.categories().contains(m.categoryName()))
                 .toList();
         if (candidates.isEmpty()) {
             candidates = orderable;
         }
-        Map<String, List<MaterialOutput>> bySupplier = candidates.stream()
-                .collect(Collectors.groupingBy(MaterialOutput::getSupplierId, LinkedHashMap::new, Collectors.toList()));
-        List<MaterialOutput> best = bySupplier.values().stream()
+        Map<UUID, List<SeedMaterial>> bySupplier = candidates.stream()
+                .collect(Collectors.groupingBy(SeedMaterial::supplierId, LinkedHashMap::new, Collectors.toList()));
+        List<SeedMaterial> best = bySupplier.values().stream()
                 .max(Comparator.comparingInt(List::size))
                 .orElseThrow();
         return best.subList(0, Math.min(2, best.size()));
     }
 
     private static CreateRequisitionInput input(Theme theme, String title, int index, SeedUser purchaser,
-                                                List<MaterialOutput> lines) {
+                                                List<SeedMaterial> lines) {
         LocalDate needed = LocalDate.now().plusDays(7 + (index * 11) % 50);
         CreateRequisitionInput input = new CreateRequisitionInput();
         input.setTitle(title);
@@ -178,13 +178,13 @@ public class DevRequisitionsSeeder implements ApplicationRunner {
         input.setRequiredDate(needed);
         input.setCurrencyCode("MAD");
         List<RequisitionLine> requisitionLines = new ArrayList<>();
-        for (MaterialOutput material : lines) {
-            Integer eoq = material.getEconomicOrderQuantity();
+        for (SeedMaterial material : lines) {
+            Integer eoq = material.economicOrderQuantity();
             int base = eoq != null && eoq > 0 ? eoq : 50;
-            RequisitionLine line = new RequisitionLine(material.getCode(), Math.max(10, base * (2 + index % 3) / 4));
-            line.setMaterialId(material.getId());
-            line.setSupplierId(UUID.fromString(material.getSupplierId()));
-            line.setSupplierName(material.getSupplierName());
+            RequisitionLine line = new RequisitionLine(material.code(), Math.max(10, base * (2 + index % 3) / 4));
+            line.setMaterialId(material.id());
+            line.setSupplierId(material.supplierId());
+            line.setSupplierName(material.supplierName());
             line.setRequiredDate(needed);
             line.setStorageLocation("WH-MAIN");
             requisitionLines.add(line);

@@ -9,8 +9,8 @@ import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLi
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineOutput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptOutput;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
-import com.materia.backend.contexts.masterData.domain.entities.Material;
-import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
+import com.materia.backend.support.fixtures.TestMaterial;
+import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderOutput;
@@ -44,11 +44,11 @@ class ReceiptStockEventsIT extends AbstractIntegrationTest {
 
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private GoodsReceiptUseCase receipts;
-    @Autowired private MaterialRepository materials;
+    @Autowired private TestMasterData materials;
     @Autowired private TestIdentity users;
     @Autowired private JdbcTemplate jdbc;
 
-    private Material material;
+    private TestMaterial material;
     private TestAccount receiver;
     private UUID orderId;
     private UUID receiptId;
@@ -64,8 +64,7 @@ class ReceiptStockEventsIT extends AbstractIntegrationTest {
             jdbc.update("delete from purchase_orders where id = ?", orderId);
         }
         if (material != null) {
-            jdbc.update("delete from material_stock_movements where material_id = ?", material.getId());
-            jdbc.update("delete from materials where id = ?", material.getId());
+            materials.remove(material.getId());
             jdbc.update("delete from outbox_messages where aggregate_id = ?", material.getId().toString());
         }
         if (receiver != null) {
@@ -78,15 +77,15 @@ class ReceiptStockEventsIT extends AbstractIntegrationTest {
         if (receiptId != null) jdbc.update("delete from outbox_messages where aggregate_id = ?", receiptId.toString());
     }
 
-    private Material reloaded() {
-        return materials.findById(material.getId()).orElseThrow();
+    private TestMaterial reloaded() {
+        return material;
     }
 
     private PurchaseOrderOutput readyOrder(int quantity) {
         receiver = users.save(aReceiver().build());
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialId(material.getId());
-        line.setMaterialCode(material.getCode().getValue());
+        line.setMaterialCode(material.getCode());
         line.setMaterialName(material.getName());
         line.setQuantity(quantity);
         line.setUnitPrice(Money.of("5.00", CurrencyCode.MAD));
@@ -132,7 +131,7 @@ class ReceiptStockEventsIT extends AbstractIntegrationTest {
 
         receive(order, 10, 2);
 
-        Material after = reloaded();
+        TestMaterial after = reloaded();
         assertEquals(28, after.getCurrentStock(), "8 accepted units entered stock");
         assertEquals(0, after.getStockOnOrder(), "all 10 received units left the stock on order");
 

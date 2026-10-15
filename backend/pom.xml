@@ -31,6 +31,8 @@
         <module>monolith</module>
         <!-- Identity: accounts, sign-in, tokens and employees; the only signer of tokens. -->
         <module>identity-service</module>
+        <!-- Master data: materials, categories, suppliers and stock. -->
+        <module>masterdata-service</module>
         <!-- The API gateway: the only way in from outside, in front of the services. -->
         <module>gateway-service</module>
     </modules>

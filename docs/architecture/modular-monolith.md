@@ -31,8 +31,9 @@ tables. The shared code names no context's table; each context plugs its own dat
 ## API gateway (`backend/gateway-service`)
 
 The only way in from outside: the frontend's nginx proxies `/api` (and the API docs) to the gateway, which routes
-them to the service that owns the path. Today every route leads to the monolith; each extracted service gets its own
-route by path prefix. Anything not routed (actuator, internal endpoints) answers 404.
+them to the service that owns the path: identity (`/api/v1/auth`, `/api/v1/employees`, the JWK set), master data
+(`/api/v1/masterdata`), each with the change history of its own records (`/api/v1/audit/<Type>`), and the monolith
+for the rest. Anything not routed (actuator, internal endpoints) answers 404.
 
 ```
 browser ─▶ nginx (frontend) ─▶ gateway ─▶ backend (monolith) ─▶ PostgreSQL
@@ -83,7 +84,10 @@ the application with `./mvnw -pl monolith -am spring-boot:run`.
 |---|---|---|
 | `materia-common` | The shared kernel above (`com.materia.backend.common`). | Spring, JPA, Kafka |
 | `materia-grpc` | The contracts between services (`src/main/proto/materia/<service>/v1`), the stubs generated from them (`com.materia.proto.*`), and the interceptors every service installs (`com.materia.grpc.*`). | `materia-common`, grpc-java |
-| `monolith` | Every context and the gateway: today's deployable. Services leave it one at a time; what remains becomes the procurement service. | `materia-common`, `materia-grpc` |
+| `materia-platform` | What every service runs on: security chain, token keys, error handling, database and Kafka setup, the gRPC server, channels and identity client. | `materia-common`, `materia-grpc` |
+| `monolith` | The contexts not extracted yet (procurement, finance, dashboard). Services leave it one at a time; what remains becomes the procurement service. | `materia-platform` |
+| `identity-service` | Identity (`auth`, `employee`): REST 8082, gRPC `identity.v1` 9091; the only signer of tokens. | `materia-platform` |
+| `masterdata-service` | Master data (`masterData`): REST 8083, gRPC `masterdata.v1` 9092; keeps stock from procurement's events (Kafka). | `materia-platform` |
 
 ### gRPC contracts
 
