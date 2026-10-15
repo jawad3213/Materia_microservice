@@ -27,8 +27,13 @@ alter role materia_procurement with login password :'procurement_password';
 alter role materia_finance with login password :'finance_password';
 alter role materia_analytics with login password :'analytics_password';
 
--- ---- Procurement: public (its migrations' history, the legacy tables), and the schemas its legacy V13 creates ----
-select format('grant create on database %I to materia_procurement', current_database()) \gexec
+-- ---- Creating schemas: procurement's legacy V13 creates the services' schemas, and each service's first migration
+-- runs "create schema if not exists" on its own, which PostgreSQL checks against the database even when it exists.
+-- A schema a service creates is its own: it gains no access to another service's. ----
+select format('grant create on database %I to materia_identity, materia_masterdata, materia_procurement, '
+              || 'materia_finance, materia_analytics', current_database()) \gexec
+
+-- ---- Procurement: public (its migrations' history, the legacy tables) ----
 alter schema public owner to materia_procurement;
 revoke create on schema public from public;
 select format('alter table public.%I owner to materia_procurement', tablename)
