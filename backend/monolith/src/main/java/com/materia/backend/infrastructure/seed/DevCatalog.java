@@ -30,7 +30,7 @@ import java.util.UUID;
 public class DevCatalog {
 
     private static final Logger log = LoggerFactory.getLogger(DevCatalog.class);
-    private static final int ATTEMPTS = 60;
+    private static final int ATTEMPTS = 150;
     private static final long PAUSE_MS = 2_000;
 
     /** What a seeder needs of an orderable material. */

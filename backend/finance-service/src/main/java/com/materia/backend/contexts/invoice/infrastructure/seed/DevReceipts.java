@@ -28,7 +28,7 @@ import java.util.UUID;
 public class DevReceipts {
 
     private static final Logger log = LoggerFactory.getLogger(DevReceipts.class);
-    private static final int ATTEMPTS = 90;
+    private static final int ATTEMPTS = 150;
     private static final long PAUSE_MS = 2_000;
 
     /** What the invoice seeder needs of a validated receipt. */

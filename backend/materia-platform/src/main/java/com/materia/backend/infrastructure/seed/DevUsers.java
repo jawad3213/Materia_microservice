@@ -34,7 +34,7 @@ public class DevUsers {
             DevSeed.ADMIN_EMAIL, "ADMIN",
             DevSeed.PURCHASER_EMAIL, "PURCHASER",
             DevSeed.RECEIVER_EMAIL, "RECEIVER");
-    private static final int ATTEMPTS = 90;
+    private static final int ATTEMPTS = 150;
     private static final long PAUSE_MS = 2_000;
 
     /** What a seeder needs of an account. */
