@@ -99,7 +99,7 @@ Requirements: Terraform >= 1.10, AWS CLI v2 with admin credentials for the accou
   versioned and TLS-only.
 - Rotating the JWT keys signs everyone out:
   ```bash
-  terraform apply -replace=random_bytes.jwt_access -replace=random_bytes.jwt_refresh
+  terraform apply -replace=tls_private_key.jwt
   ```
   Then redeploy.
 

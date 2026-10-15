@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+// Types every Materia contract shares.
+package materia.common.v1;
+
+option java_package = "com.materia.proto.common.v1";
+option java_multiple_files = true;
+
+// An amount in a currency (com.materia.backend.common.domain.valueObjects.Money). The amount is a decimal string,
+// e.g. "1250.50", never a floating-point number.
+message Money {
+  string amount = 1;
+  // ISO 4217 code, e.g. "MAD"
+  string currency = 2;
+}

@@ -1,0 +1,44 @@
+package com.materia.backend.contexts.purchaseOrder.infrastructure.adapters.out.messaging;
+
+import com.materia.backend.contexts.purchaseOrder.domain.events.PurchaseOrderConfirmedEvent;
+import com.materia.backend.contexts.purchaseOrder.domain.events.PurchaseOrderDeliveredEvent;
+import com.materia.backend.contexts.purchaseOrder.domain.events.PurchaseOrderSubmittedEvent;
+import com.materia.backend.contexts.purchaseOrder.domain.ports.out.PurchaseOrderEventPublisher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Component;
+
+/**
+ * Spring In-Process Event adapter for the purchase order event publishing port.
+ * Always active: events are published through Spring whatever app.messaging.type is; with kafka, the outbox relay
+ * also sends them to the broker.
+ */
+@Component
+public class PurchaseOrderSpringEventPublisher implements PurchaseOrderEventPublisher {
+
+    private static final Logger log = LoggerFactory.getLogger(PurchaseOrderSpringEventPublisher.class);
+    private final ApplicationEventPublisher eventPublisher;
+
+    public PurchaseOrderSpringEventPublisher(ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    @Override
+    public void publish(PurchaseOrderSubmittedEvent event) {
+        log.info("📢 [Spring Event Published] PurchaseOrderSubmittedEvent for ID: {}", event.getPurchaseOrderId());
+        eventPublisher.publishEvent(event);
+    }
+
+    @Override
+    public void publish(PurchaseOrderConfirmedEvent event) {
+        log.info("📢 [Spring Event Published] PurchaseOrderConfirmedEvent for ID: {}", event.getPurchaseOrderId());
+        eventPublisher.publishEvent(event);
+    }
+
+    @Override
+    public void publish(PurchaseOrderDeliveredEvent event) {
+        log.info("📢 [Spring Event Published] PurchaseOrderDeliveredEvent for ID: {}", event.getPurchaseOrderId());
+        eventPublisher.publishEvent(event);
+    }
+}

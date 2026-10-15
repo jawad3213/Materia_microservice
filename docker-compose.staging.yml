@@ -28,6 +28,48 @@ services:
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
 
   # -----------------------------------------------------------------
+  # Identity (Staging: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  identity:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+
+  # -----------------------------------------------------------------
+  # Master data (Staging: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  masterdata:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+
+  # -----------------------------------------------------------------
+  # Finance (Staging: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  finance:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+
+  # -----------------------------------------------------------------
+  # Analytics (Staging: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  analytics:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+
+  # -----------------------------------------------------------------
+  # Gateway: reached by the frontend's nginx only
+  # -----------------------------------------------------------------
+  gateway:
+    restart: always
+
+  # -----------------------------------------------------------------
   # Frontend (Staging: port 80, points to staging API)
   # -----------------------------------------------------------------
   frontend:

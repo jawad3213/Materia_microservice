@@ -5,8 +5,8 @@
 # plus REGISTRY, PROJECT, ENVIRONMENT and IMAGE_TAG.
 #
 # Only the frontend publishes a port to the network: its nginx serves
-# the SPA and proxies /api to the backend. Backend and PostgreSQL stay
-# internal. Grafana and Prometheus listen on the host's loopback only:
+# the SPA and proxies /api to the gateway, which routes it to identity,
+# master data, finance, analytics or the backend. Gateway, services, Kafka and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
 # reach them through an SSM port forward (see aws/README.md).
 # ===================================================================
 name: materia
@@ -35,6 +35,32 @@ services:
     logging: *logging
     networks: [internal]
 
+  # Events between services (master data keeps stock from procurement's events): one broker, internal only.
+  kafka:
+    image: apache/kafka:3.7.0
+    restart: always
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: -Xmx256m -Xms256m
+    volumes:
+      - /data/kafka:/var/lib/kafka/data
+    mem_limit: 512m
+    logging: *logging
+    networks: [internal]
+
   backend:
     image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-backend:${IMAGE_TAG}
     restart: always
@@ -44,6 +70,16 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       APP_ATTACHMENTS_DIR: /data/attachments
+      # Identity alone signs tokens: this service verifies them, and asks identity for its own service tokens.
+      JWT_PRIVATE_KEY: ""
+      SERVICE_CLIENT_ID: monolith
+      GRPC_IDENTITY_TARGET: identity:9091
+      GRPC_MASTERDATA_TARGET: masterdata:9092
+      # Its outbox relay publishes the shared outbox (every service's events) to Kafka.
+      APP_MESSAGING_TYPE: kafka
+      APP_OUTBOX_RELAY_ENABLED: "true"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: "true"
       # Actuator on its own port, reachable only inside the compose network: health checks and Prometheus
       MANAGEMENT_SERVER_PORT: "8081"
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
@@ -54,12 +90,201 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      kafka:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
       interval: 15s
       timeout: 5s
       retries: 20
       start_period: 60s
+    mem_limit: 1024m
+    logging: *logging
+    networks: [internal]
+
+  # Identity: sign-in, accounts, employees; the only signer of tokens. REST on 8082 (through the gateway),
+  # gRPC identity.v1 on 9091 for the backend. Needs the shared tables the backend's migrations create, so it
+  # waits for the backend to be healthy.
+  identity:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-identity:${IMAGE_TAG}
+    restart: always
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      # The shared .env is the backend's: these keep identity on its own schema, without an outbox relay
+      SPRING_FLYWAY_DEFAULT_SCHEMA: identity
+      APP_MESSAGING_TYPE: spring
+      APP_OUTBOX_RELAY_ENABLED: "false"
+      SPRINGDOC_INFO_TITLE: Materia Identity API
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
+      MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    mem_limit: 512m
+    logging: *logging
+    networks: [internal]
+
+  # Master data: materials, categories, suppliers, stock. REST on 8083 (through the gateway), gRPC masterdata.v1 on
+  # 9092 for the backend; keeps stock from procurement's events (Kafka) and raises replenishment requisitions in the
+  # backend (gRPC 9090). Needs the shared tables the backend's migrations create, so it waits for the backend.
+  masterdata:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-masterdata:${IMAGE_TAG}
+    restart: always
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      # The shared .env is the backend's: these keep master data on its own schema, consumer group and keys
+      SPRING_FLYWAY_DEFAULT_SCHEMA: masterdata
+      APP_MESSAGING_TYPE: kafka
+      APP_OUTBOX_RELAY_ENABLED: "false"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: "true"
+      JWT_PRIVATE_KEY: ""
+      GRPC_IDENTITY_TARGET: identity:9091
+      GRPC_MONOLITH_TARGET: backend:9090
+      SPRINGDOC_INFO_TITLE: Materia Master Data API
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
+      MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    mem_limit: 512m
+    logging: *logging
+    networks: [internal]
+
+  # Finance: invoices, payments, settings. REST on 8084 (through the gateway), gRPC finance.v1 on 9093 for the
+  # dashboard; reads procurement's orders and receipts on the backend (gRPC 9090). Shares the backend's attachment
+  # files (supplier invoice scans). Needs the shared tables the backend's migrations create, so it waits for it.
+  finance:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-finance:${IMAGE_TAG}
+    restart: always
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      # The shared .env is the backend's: these keep finance on its own schema, without Kafka or a relay, and its keys
+      SPRING_FLYWAY_DEFAULT_SCHEMA: finance
+      APP_MESSAGING_TYPE: spring
+      APP_OUTBOX_RELAY_ENABLED: "false"
+      JWT_PRIVATE_KEY: ""
+      GRPC_IDENTITY_TARGET: identity:9091
+      GRPC_MONOLITH_TARGET: backend:9090
+      APP_ATTACHMENTS_DIR: /data/attachments
+      SPRINGDOC_INFO_TITLE: Materia Finance API
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
+      MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
+    volumes:
+      - /data/attachments:/data/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    mem_limit: 512m
+    logging: *logging
+    networks: [internal]
+
+  # Analytics: the dashboard, composed from the other services' figures over gRPC; REST on 8085 (through the
+  # gateway), serves no contract. Needs the shared tables the backend's migrations create, so it waits for it.
+  analytics:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-analytics:${IMAGE_TAG}
+    restart: always
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      # The shared .env is the backend's: these keep analytics on its own schema, without Kafka or a relay, and its keys
+      SPRING_FLYWAY_DEFAULT_SCHEMA: analytics
+      APP_MESSAGING_TYPE: spring
+      APP_OUTBOX_RELAY_ENABLED: "false"
+      JWT_PRIVATE_KEY: ""
+      GRPC_IDENTITY_TARGET: identity:9091
+      GRPC_MONOLITH_TARGET: backend:9090
+      GRPC_MASTERDATA_TARGET: masterdata:9092
+      GRPC_FINANCE_TARGET: finance:9093
+      SPRINGDOC_INFO_TITLE: Materia Analytics API
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
+      MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    mem_limit: 384m
+    logging: *logging
+    networks: [internal]
+
+  # The API gateway: refuses invalid tokens, rate-limits, routes /api to identity or the backend
+  gateway:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-gateway:${IMAGE_TAG}
+    restart: always
+    environment:
+      GATEWAY_BACKEND_URI: http://backend:8080
+      GATEWAY_IDENTITY_URI: http://identity:8082
+      GATEWAY_MASTERDATA_URI: http://masterdata:8083
+      GATEWAY_FINANCE_URI: http://finance:8084
+      GATEWAY_ANALYTICS_URI: http://analytics:8085
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
+    depends_on:
+      backend:
+        condition: service_started
+      identity:
+        condition: service_started
+      masterdata:
+        condition: service_started
+      finance:
+        condition: service_started
+      analytics:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    mem_limit: 384m
     logging: *logging
     networks: [internal]
 
@@ -69,7 +294,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      backend:
+      gateway:
         condition: service_started
     logging: *logging
     networks: [internal]

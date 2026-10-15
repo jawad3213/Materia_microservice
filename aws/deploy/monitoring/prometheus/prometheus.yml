@@ -17,6 +17,36 @@ scrape_configs:
     static_configs:
       - targets: ["backend:8081"]
 
+  # Identity: sign-ins, token refreshes, account and employee management
+  - job_name: identity
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["identity:8081"]
+
+  # Master data: catalogue and stock management, the nightly reorder check
+  - job_name: masterdata
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["masterdata:8081"]
+
+  # Finance: invoices, payments, settings
+  - job_name: finance
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["finance:8081"]
+
+  # Analytics: the dashboard (and the calls it makes to the other services)
+  - job_name: analytics
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["analytics:8081"]
+
+  # The API gateway: every request from outside, refusals (401, 429) included
+  - job_name: gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["gateway:8081"]
+
   # The host: CPU, memory, disk of the instance
   - job_name: node
     static_configs:

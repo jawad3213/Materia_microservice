@@ -34,6 +34,72 @@ services:
           memory: 512M
 
   # -----------------------------------------------------------------
+  # Identity (Prod: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  identity:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  # -----------------------------------------------------------------
+  # Master data (Prod: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  masterdata:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  # -----------------------------------------------------------------
+  # Finance (Prod: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  finance:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  # -----------------------------------------------------------------
+  # Analytics (Prod: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  analytics:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 256M
+
+  # -----------------------------------------------------------------
+  # Gateway: reached by the frontend's nginx only
+  # -----------------------------------------------------------------
+  gateway:
+    restart: always
+
+  # -----------------------------------------------------------------
   # Frontend (Prod: production domain API, port 80, resource limits)
   # -----------------------------------------------------------------
   frontend:

@@ -9,12 +9,12 @@ const attachmentService = {
 
   upload: (ownerType: AttachmentOwnerType, ownerId: string, category: AttachmentCategory, file: File) => {
     const form = new FormData();
-    form.append("ownerType", ownerType);
     form.append("ownerId", ownerId);
     form.append("category", category);
     form.append("file", file);
+    // The owner type travels in the query, as for list: the gateway routes on it (invoices are finance's).
     // No Content-Type here: the browser sets multipart/form-data with its boundary.
-    return axiosClient.post<Attachment>(BASE_URL, form);
+    return axiosClient.post<Attachment>(BASE_URL, form, { params: { ownerType } });
   },
 
   /** The file goes through axios so the access token is sent; a plain link could not authenticate. */

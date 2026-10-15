@@ -44,8 +44,8 @@ fresh machine) and sets up Java 21 / Node 22.
 | 4 | **Integration tests** | Backend `*IT` classes, against PostgreSQL in Docker (Testcontainers) | A failing test |
 | 5 | **SonarQube** | Merges unit + integration coverage (JaCoCo), checks the **80% branch-coverage gate**, analyses the code and waits for the quality gate | Coverage below 80% in a gated package, or a red quality gate |
 | 6 | **Dependency scan** | Trivy on the libraries **inside the built JAR** and on the lockfiles | A fixable HIGH/CRITICAL vulnerability not accepted in `.trivyignore` |
-| 7 | **Build images** | Backend (from the scanned JAR) and frontend images, then a scan of both | Build error, or a fixable HIGH/CRITICAL vulnerability in an image |
-| 8 | **Push to Amazon ECR** | `materia-staging-backend:<sha>`, `materia-staging-frontend:<sha>`; skipped for pull requests | AWS login or push error |
+| 7 | **Build images** | Backend and gateway (from their scanned JARs) and frontend images, then a scan of each | Build error, or a fixable HIGH/CRITICAL vulnerability in an image |
+| 8 | **Push to Amazon ECR** | `materia-staging-backend:<sha>`, `materia-staging-gateway:<sha>`, `materia-staging-frontend:<sha>`; skipped for pull requests | AWS login or push error |
 
 ## 🚦 CD Staging
 
@@ -134,7 +134,7 @@ cd backend && ./mvnw checkstyle:check
 cd frontend && npm run typecheck && npm run lint:ci
 cd backend && ./mvnw test -Dtest='!*IT' -Dsurefire.failIfNoSpecifiedTests=false -Djacoco.destFile=target/jacoco-unit.exec
 cd backend && ./mvnw test -Dtest='*IT' -Dsurefire.failIfNoSpecifiedTests=false -Djacoco.destFile=target/jacoco-it.exec
-cd backend && ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:check@check
+cd backend && ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:report-aggregate@aggregate jacoco:check@check
 
 # CD tests, against a running stack (BASE_URL without a trailing /)
 k6 run -e BASE_URL=http://localhost -e TEST_EMAIL=... -e TEST_PASSWORD=... tests/performance/load-test.js

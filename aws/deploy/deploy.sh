@@ -62,21 +62,26 @@ write_env() {
   log "Wrote .env ($(wc -l <.env) variables)"
 }
 
-backend_health() {
+health() {
   local id
-  id="$(docker compose ps -q backend)"
+  id="$(docker compose ps -q "$1")"
   [ -n "$id" ] && docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id"
 }
 
+# The backend, then the services that start once it is healthy
 wait_healthy() {
-  for _ in $(seq 1 60); do
-    case "$(backend_health || true)" in
-      healthy) return 0 ;;
-      unhealthy) return 1 ;;
-    esac
-    sleep 5
+  local service
+  for service in backend identity masterdata finance analytics; do
+    for _ in $(seq 1 60); do
+      case "$(health "$service" || true)" in
+        healthy) continue 2 ;;
+        unhealthy) log "$service is unhealthy"; return 1 ;;
+      esac
+      sleep 5
+    done
+    log "$service did not become healthy in time"
+    return 1
   done
-  return 1
 }
 
 start() {
@@ -91,7 +96,7 @@ start() {
 
 report_images() {
   local service id image
-  for service in backend frontend; do
+  for service in backend identity masterdata finance analytics gateway frontend; do
     id="$(docker compose ps -q "$service")"
     [ -n "$id" ] || continue
     image="$(docker inspect --format '{{.Image}}' "$id")"
@@ -101,11 +106,13 @@ report_images() {
 
 [ -f .bootstrapped ] || { log "Host bootstrap has not finished yet"; exit 1; }
 
-# Attachment files: owned by the backend container user (uid 10001, see backend/Dockerfile)
+# Attachment files: owned by the backend container user, which finance shares (uid 10001, see backend/monolith/Dockerfile)
 install -d -m 750 -o 10001 -g 10001 /data/attachments
 # Monitoring data, owned by the users the images run as (Prometheus: nobody, Grafana: 472)
 install -d -m 750 -o 65534 -g 65534 /data/prometheus
 install -d -m 750 -o 472 -g 0 /data/grafana
+# Kafka's log (the apache/kafka image runs as appuser, uid 1000)
+install -d -m 750 -o 1000 -g 1000 /data/kafka
 [ -f monitoring/prometheus/prometheus.yml ] || { log "Monitoring configuration missing in $APP_DIR/monitoring"; exit 1; }
 
 log "Logging in to $REGISTRY"

@@ -35,7 +35,7 @@ build/
 # Ignored resources
 # Flyway migrations are tracked: every environment needs them to build its schema. They hold
 # no account: the first administrator is created at start-up (AdminAccountBootstrap).
-src/main/resources/META-INF/
+**/src/main/resources/META-INF/
 
 ### Local attachment files ###
-data/attachments/
+**/data/attachments/

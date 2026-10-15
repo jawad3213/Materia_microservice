@@ -1,0 +1,40 @@
+package com.materia.gateway;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * Where the gateway sends requests and how it checks them ({@code gateway.*}).
+ *
+ * @param backendUri    the monolith: the REST API no extracted service answers
+ * @param identityUri   Identity (sign-in, accounts, employees, the token key); the monolith when not set
+ * @param masterDataUri Master data (materials, categories, suppliers); the monolith when not set
+ * @param financeUri    Finance (invoices, payments, settings); the monolith when not set
+ * @param analyticsUri  Analytics (the dashboard); the monolith when not set
+ * @param jwksUri       Identity's published token key (JWK set); Identity's own when not set
+ * @param rateLimit     per-client request budgets
+ */
+@ConfigurationProperties(prefix = "gateway")
+public record GatewayProperties(String backendUri, String identityUri, String masterDataUri, String financeUri,
+                                String analyticsUri, String jwksUri, RateLimit rateLimit) {
+
+    public GatewayProperties {
+        if (backendUri == null || backendUri.isBlank()) {
+            throw new IllegalStateException("gateway.backend-uri is not set");
+        }
+        if (identityUri == null || identityUri.isBlank()) identityUri = backendUri;
+        if (masterDataUri == null || masterDataUri.isBlank()) masterDataUri = backendUri;
+        if (financeUri == null || financeUri.isBlank()) financeUri = backendUri;
+        if (analyticsUri == null || analyticsUri.isBlank()) analyticsUri = backendUri;
+        if (jwksUri == null || jwksUri.isBlank()) jwksUri = identityUri + "/.well-known/jwks.json";
+        if (rateLimit == null) rateLimit = new RateLimit(true, 120, 10, 60);
+    }
+
+    /**
+     * @param enabled                     off in tests that are not about it
+     * @param maxRequestsPerMinute        a client's budget for the API
+     * @param maxAuthRequestsPerMinute    a client's budget for sign-in and password reset, kept small against guessing
+     * @param windowSeconds               length of the counting window
+     */
+    public record RateLimit(boolean enabled, int maxRequestsPerMinute, int maxAuthRequestsPerMinute, int windowSeconds) {
+    }
+}

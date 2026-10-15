@@ -426,12 +426,25 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 ### Lancement Manuel en Local
 
-#### 1. Démarrer le Backend :
+#### 1. Démarrer le Backend (un terminal par service, dans cet ordre) :
 ```bash
 cd backend
-./mvnw clean spring-boot:run
+# Le monolithe (port 8080) : ses migrations créent les tables partagées dont identity a besoin
+./mvnw -pl monolith -am spring-boot:run
+# Identity (REST 8082, gRPC 9091) : connexion, comptes, employés ; seul signataire des jetons
+./mvnw -pl identity-service -am spring-boot:run
+# Master data (REST 8083, gRPC 9092) : articles, catégories, fournisseurs, stock (reçoit les événements via Kafka)
+./mvnw -pl masterdata-service -am spring-boot:run
+# Finance (REST 8084, gRPC 9093) : factures, paiements, paramètres
+./mvnw -pl finance-service -am spring-boot:run
+# Analytics (REST 8085) : le tableau de bord, composé des chiffres des autres services
+./mvnw -pl analytics-service -am spring-boot:run
+# La passerelle (port 8090) : le seul point d'entrée, qui route vers chaque service et le monolithe
+SERVER_PORT=8090 MANAGEMENT_SERVER_PORT=8091 GATEWAY_IDENTITY_URI=http://localhost:8082 \
+  GATEWAY_MASTERDATA_URI=http://localhost:8083 GATEWAY_FINANCE_URI=http://localhost:8084 \
+  GATEWAY_ANALYTICS_URI=http://localhost:8085 ./mvnw -pl gateway-service -am spring-boot:run
 ```
-*Le serveur backend démarre sur le port `8080`.*
+*Le frontend appelle l'API via la passerelle : `http://localhost:8090/api/v1`. Les événements entre services passent par Kafka (`localhost:9092`, par exemple `docker compose up -d kafka`).*
 
 #### 2. Démarrer le Frontend (dans un autre terminal) :
 ```bash

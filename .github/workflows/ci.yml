@@ -182,9 +182,9 @@ jobs:
           name: unit-coverage
           retention-days: 3
           path: |
-            backend/target/classes
-            backend/target/test-classes
-            backend/target/jacoco-unit.exec
+            backend/*/target/classes
+            backend/*/target/test-classes
+            backend/*/target/jacoco-unit.exec
             frontend/coverage/lcov.info
 
       - name: Upload unit test reports
@@ -193,7 +193,7 @@ jobs:
         with:
           name: unit-test-reports
           retention-days: 14
-          path: backend/target/surefire-reports/
+          path: backend/*/target/surefire-reports/
 
   # ------------------------------------------------------------------------------------------
   # 4. Integration tests (backend *IT against PostgreSQL in Docker, via Testcontainers)
@@ -229,7 +229,7 @@ jobs:
         with:
           name: integration-coverage
           retention-days: 3
-          path: backend/target/jacoco-it.exec
+          path: backend/*/target/jacoco-it.exec # stored relative to backend/
 
       - name: Upload integration test reports
         if: always()
@@ -237,7 +237,7 @@ jobs:
         with:
           name: integration-test-reports
           retention-days: 14
-          path: backend/target/surefire-reports/
+          path: backend/*/target/surefire-reports/
 
   # ------------------------------------------------------------------------------------------
   # 5. SonarQube: coverage gate (JaCoCo, unit + integration) and code analysis with its quality gate
@@ -265,20 +265,23 @@ jobs:
       - name: Get compiled classes and unit-test coverage
         uses: actions/download-artifact@v4
         with:
-          name: unit-coverage # backend/target/... and frontend/coverage/..., relative to the repository root
+          name: unit-coverage # backend/*/target/... and frontend/coverage/..., relative to the repository root
 
       - name: Get integration-test coverage
         uses: actions/download-artifact@v4
         with:
           name: integration-coverage
-          path: backend/target
+          path: backend
 
       - name: Coverage gate (80% of branches, unit + integration tests)
         working-directory: backend
         run: |
           chmod +x mvnw
-          ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:check@check
-          ./mvnw -q dependency:copy-dependencies -DoutputDirectory=target/dependency -DincludeScope=compile
+          ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:report-aggregate@aggregate jacoco:check@check
+          # Libraries Sonar resolves the bytecode against. In the same run as `package`, so the monolith finds the
+          # shared modules of this build; it recompiles the same sources after the coverage reports were written.
+          ./mvnw -q package dependency:copy-dependencies -DskipTests -Djacoco.skip=true \
+            -DoutputDirectory=target/dependency -DincludeScope=compile
 
       - name: SonarQube analysis
         if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
@@ -328,7 +331,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: vuln
-          skip-dirs: frontend/node_modules,backend/target
+          skip-dirs: frontend/node_modules,backend/materia-common/target,backend/materia-grpc/target,backend/monolith/target,backend/identity-service/target,backend/masterdata-service/target,backend/finance-service/target,backend/analytics-service/target,backend/gateway-service/target
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           trivyignores: .trivyignore
@@ -342,7 +345,72 @@ jobs:
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
-          scan-ref: backend/target
+          scan-ref: backend/monolith/target
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+      - name: Scan the identity JAR (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: rootfs
+          scan-ref: backend/identity-service/target
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+      - name: Scan the masterdata JAR (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: rootfs
+          scan-ref: backend/masterdata-service/target
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+      - name: Scan the finance JAR (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: rootfs
+          scan-ref: backend/finance-service/target
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+      - name: Scan the analytics JAR (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: rootfs
+          scan-ref: backend/analytics-service/target
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+      - name: Scan the gateway JAR (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: rootfs
+          scan-ref: backend/gateway-service/target
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -355,7 +423,42 @@ jobs:
         with:
           name: backend-jar
           retention-days: 3
-          path: backend/target/*.jar
+          path: backend/monolith/target/*.jar
+
+      - name: Keep the scanned identity JAR for its image
+        uses: actions/upload-artifact@v4
+        with:
+          name: identity-jar
+          retention-days: 3
+          path: backend/identity-service/target/*.jar
+
+      - name: Keep the scanned masterdata JAR for its image
+        uses: actions/upload-artifact@v4
+        with:
+          name: masterdata-jar
+          retention-days: 3
+          path: backend/masterdata-service/target/*.jar
+
+      - name: Keep the scanned finance JAR for its image
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-jar
+          retention-days: 3
+          path: backend/finance-service/target/*.jar
+
+      - name: Keep the scanned analytics JAR for its image
+        uses: actions/upload-artifact@v4
+        with:
+          name: analytics-jar
+          retention-days: 3
+          path: backend/analytics-service/target/*.jar
+
+      - name: Keep the scanned gateway JAR for its image
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-jar
+          retention-days: 3
+          path: backend/gateway-service/target/*.jar
 
   # ------------------------------------------------------------------------------------------
   # 7. Build images (and scan them, OS packages included)
@@ -374,13 +477,58 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: backend-jar
-          path: backend/target
+          path: backend/monolith/target
+
+      - name: Get the identity JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: identity-jar
+          path: backend/identity-service/target
+
+      - name: Get the masterdata JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: masterdata-jar
+          path: backend/masterdata-service/target
+
+      - name: Get the finance JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: finance-jar
+          path: backend/finance-service/target
+
+      - name: Get the analytics JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: analytics-jar
+          path: backend/analytics-service/target
+
+      - name: Get the gateway JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: gateway-jar
+          path: backend/gateway-service/target
 
       - name: Build backend image
-        run: docker build --pull -t "$PROJECT-backend:$IMAGE_TAG" backend/
+        run: docker build --pull -t "$PROJECT-backend:$IMAGE_TAG" backend/monolith/
+
+      - name: Build identity image
+        run: docker build --pull -t "$PROJECT-identity:$IMAGE_TAG" backend/identity-service/
+
+      - name: Build masterdata image
+        run: docker build --pull -t "$PROJECT-masterdata:$IMAGE_TAG" backend/masterdata-service/
+
+      - name: Build finance image
+        run: docker build --pull -t "$PROJECT-finance:$IMAGE_TAG" backend/finance-service/
+
+      - name: Build analytics image
+        run: docker build --pull -t "$PROJECT-analytics:$IMAGE_TAG" backend/analytics-service/
+
+      - name: Build gateway image
+        run: docker build --pull -t "$PROJECT-gateway:$IMAGE_TAG" backend/gateway-service/
 
       - name: Build frontend image
-        # nginx in the frontend image proxies /api to the backend, so the API is same-origin.
+        # nginx in the frontend image proxies /api to the gateway, so the API is same-origin.
         run: docker build --pull --build-arg VITE_API_BASE_URL=/api/v1 -t "$PROJECT-frontend:$IMAGE_TAG" frontend/
 
       - name: Scan backend image (Trivy)
@@ -389,6 +537,66 @@ jobs:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
           image-ref: ${{ env.PROJECT }}-backend:${{ env.IMAGE_TAG }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+
+      - name: Scan identity image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: image
+          image-ref: ${{ env.PROJECT }}-identity:${{ env.IMAGE_TAG }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+
+      - name: Scan masterdata image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: image
+          image-ref: ${{ env.PROJECT }}-masterdata:${{ env.IMAGE_TAG }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+
+      - name: Scan finance image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: image
+          image-ref: ${{ env.PROJECT }}-finance:${{ env.IMAGE_TAG }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+
+      - name: Scan analytics image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: image
+          image-ref: ${{ env.PROJECT }}-analytics:${{ env.IMAGE_TAG }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+
+      - name: Scan gateway image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: image
+          image-ref: ${{ env.PROJECT }}-gateway:${{ env.IMAGE_TAG }}
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -409,7 +617,7 @@ jobs:
 
       - name: Save images for the push stage
         if: needs.setup.outputs.push_images == 'true'
-        run: docker save "$PROJECT-backend:$IMAGE_TAG" "$PROJECT-frontend:$IMAGE_TAG" | gzip -1 > images.tar.gz
+        run: docker save "$PROJECT-backend:$IMAGE_TAG" "$PROJECT-identity:$IMAGE_TAG" "$PROJECT-masterdata:$IMAGE_TAG" "$PROJECT-finance:$IMAGE_TAG" "$PROJECT-analytics:$IMAGE_TAG" "$PROJECT-gateway:$IMAGE_TAG" "$PROJECT-frontend:$IMAGE_TAG" | gzip -1 > images.tar.gz
 
       - name: Hand the images to the push stage
         if: needs.setup.outputs.push_images == 'true'
@@ -459,7 +667,7 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           gunzip -c images.tar.gz | docker load
-          for SERVICE in backend frontend; do
+          for SERVICE in backend identity masterdata finance analytics gateway frontend; do
             REPOSITORY="$PROJECT-$ENVIRONMENT-$SERVICE"
             TARGET="$REGISTRY/$REPOSITORY:$IMAGE_TAG"
             # Tags are immutable in ECR: a re-run of the same commit finds its image already there.

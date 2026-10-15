@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+// The shapes every service's reporting contract shares (com.materia.backend.common.application.metrics). Analytics
+// composes the dashboard from them. Amounts are decimal strings in the reporting currency, never floating point.
+package materia.common.v1;
+
+option java_package = "com.materia.proto.common.v1";
+option java_multiple_files = true;
+
+// ReportingRates: the currency figures are reported in, and today's rate of each other currency into it.
+message ReportingRates {
+  // ISO 4217, e.g. "MAD"
+  string reporting_currency = 1;
+  // currency code -> decimal rate
+  map<string, string> current = 2;
+}
+
+// From and to, both included. ISO dates, e.g. "2026-01-01".
+message Period {
+  string from = 1;
+  string to = 2;
+}
+
+// MonthAmount
+message MonthAmount {
+  // ISO year-month, e.g. "2026-10"
+  string month = 1;
+  string amount = 2;
+}
+
+// CountedAmount: a group (a supplier, a category) with its document count and total.
+message CountedAmount {
+  string key = 1;
+  string label = 2;
+  int64 count = 3;
+  string amount = 4;
+}
+
+// RecentDocument: one line of the dashboard's activity feed.
+message RecentDocument {
+  string id = 1;
+  string code = 2;
+  optional string title = 3;
+  optional string status = 4;
+  // ISO local date-time, e.g. "2026-10-11T14:05:00"
+  optional string created_at = 5;
+}
+
+message StatusRequest {
+  string status = 1;
+}
+
+message StatusesRequest {
+  repeated string statuses = 1;
+}
+
+message StatusesWithRatesRequest {
+  repeated string statuses = 1;
+  ReportingRates rates = 2;
+}
+
+message StatusesByMonthRequest {
+  repeated string statuses = 1;
+  ReportingRates rates = 2;
+  Period period = 3;
+}
+
+message ReportingCurrencyRequest {
+  string reporting_currency = 1;
+}
+
+message LatestRequest {
+  int32 limit = 1;
+}
+
+message LatestResponse {
+  repeated RecentDocument documents = 1;
+}
+
+message CountResponse {
+  int64 count = 1;
+}
+
+// A count per key: per currency, per status.
+message CountsResponse {
+  map<string, int64> counts = 1;
+}
+
+message AmountResponse {
+  string amount = 1;
+}
+
+message MonthAmountsResponse {
+  repeated MonthAmount months = 1;
+}
+
+message CountedAmountsResponse {
+  repeated CountedAmount groups = 1;
+}

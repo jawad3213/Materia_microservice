@@ -15,7 +15,7 @@ locals {
 
   # Repositories whose images this environment promotes (prod: staging's), same account and region
   promotion_source_repository_arns = var.promote_from_environment == "" ? [] : [
-    for service in ["backend", "frontend"] :
+    for service in ["backend", "identity", "masterdata", "finance", "analytics", "gateway", "frontend"] :
     "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project}-${var.promote_from_environment}-${service}"
   ]
 
@@ -34,17 +34,16 @@ locals {
     POSTGRES_USER                           = "materia"
     SPRING_DATASOURCE_DRIVER_CLASS_NAME     = "org.postgresql.Driver"
     SPRING_JPA_HIBERNATE_DIALECT            = "org.hibernate.dialect.PostgreSQLDialect"
-    SPRING_JPA_DEFAULT_SCHEMA               = "public"
     SPRING_FLYWAY_DEFAULT_SCHEMA            = "public"
     SPRING_JPA_BATCH_SIZE                   = "50"
     SPRING_JPA_ORDER_INSERTS                = "true"
     SPRING_JPA_ORDER_UPDATES                = "true"
-    APP_MESSAGING_TYPE                      = "spring"
+    APP_MESSAGING_TYPE                      = "kafka"
+    SPRING_KAFKA_BOOTSTRAP_SERVERS          = "kafka:29092"
     SPRING_KAFKA_CONSUMER_GROUP_ID          = "materia-${var.environment}"
     SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET = "earliest"
-    SPRING_KAFKA_LISTENER_AUTO_STARTUP      = "false"
+    SPRING_KAFKA_LISTENER_AUTO_STARTUP      = "true"
     JWT_EXPIRATION_MS                       = "900000"
-    JWT_REFRESH_EXPIRATION_MS               = "604800000"
     SPRINGDOC_API_DOCS_PATH                 = "/v3/api-docs"
     SPRINGDOC_SWAGGER_UI_PATH               = "/swagger-ui.html"
     SPRINGDOC_INFO_TITLE                    = "Materia API"
@@ -103,13 +102,36 @@ resource "random_password" "postgres" {
   special = false # the value goes through a docker compose .env file
 }
 
-# The backend base64-decodes its JWT keys (HMAC-SHA, 512 bits).
-resource "random_bytes" "jwt_access" {
-  length = 64
+# RS256 key pair that signs and verifies access tokens. The backend reads each as the Base64 of its PEM, so it
+# stays on one line in the docker compose .env file.
+resource "tls_private_key" "jwt" {
+  algorithm = "RSA"
+  rsa_bits  = 2048
 }
 
-resource "random_bytes" "jwt_refresh" {
-  length = 64
+# The secret the backend presents to identity for its service tokens (identity.v1.ServiceTokens): the backend
+# sends it as SERVICE_CLIENT_SECRET, identity checks it against SERVICE_CLIENT_MONOLITH_SECRET.
+resource "random_password" "service_client_monolith" {
+  length  = 48
+  special = false # the value goes through a docker compose .env file
+}
+
+# The secret master data presents to identity for its service tokens.
+resource "random_password" "service_client_masterdata" {
+  length  = 48
+  special = false # the value goes through a docker compose .env file
+}
+
+# The secret finance presents to identity for its service tokens.
+resource "random_password" "service_client_finance" {
+  length  = 48
+  special = false # the value goes through a docker compose .env file
+}
+
+# The secret analytics presents to identity for its service tokens.
+resource "random_password" "service_client_analytics" {
+  length  = 48
+  special = false # the value goes through a docker compose .env file
 }
 
 # Grafana's admin account (aws/deploy/docker-compose.yml); Grafana is reached through an SSM port forward only.
@@ -144,10 +166,15 @@ module "app_parameters" {
   parameters = merge(local.default_app_config, local.bootstrap_admin.config, var.app_config)
   secure_parameters = merge(
     {
-      POSTGRES_PASSWORD      = random_password.postgres.result
-      JWT_ACCESS_SECRET      = random_bytes.jwt_access.base64
-      JWT_REFRESH_SECRET     = random_bytes.jwt_refresh.base64
-      GRAFANA_ADMIN_PASSWORD = random_password.grafana_admin.result
+      POSTGRES_PASSWORD                = random_password.postgres.result
+      JWT_PRIVATE_KEY                  = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
+      JWT_PUBLIC_KEY                   = base64encode(tls_private_key.jwt.public_key_pem)
+      GRAFANA_ADMIN_PASSWORD           = random_password.grafana_admin.result
+      SERVICE_CLIENT_SECRET            = random_password.service_client_monolith.result
+      SERVICE_CLIENT_MONOLITH_SECRET   = random_password.service_client_monolith.result
+      SERVICE_CLIENT_MASTERDATA_SECRET = random_password.service_client_masterdata.result
+      SERVICE_CLIENT_FINANCE_SECRET    = random_password.service_client_finance.result
+      SERVICE_CLIENT_ANALYTICS_SECRET  = random_password.service_client_analytics.result
     },
     local.bootstrap_admin.secrets,
     var.extra_secrets,
