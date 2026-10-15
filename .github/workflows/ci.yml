@@ -278,7 +278,7 @@ jobs:
         run: |
           chmod +x mvnw
           ./mvnw jacoco:merge@merge-ci jacoco:report jacoco:report-aggregate@aggregate jacoco:check@check
-          # Libraries Sonar resolves the bytecode against. In the same run as `package`, so the monolith finds the
+          # Libraries Sonar resolves the bytecode against. In the same run as `package`, so procurement finds the
           # shared modules of this build; it recompiles the same sources after the coverage reports were written.
           ./mvnw -q package dependency:copy-dependencies -DskipTests -Djacoco.skip=true \
             -DoutputDirectory=target/dependency -DincludeScope=compile
@@ -331,7 +331,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: vuln
-          skip-dirs: frontend/node_modules,backend/materia-common/target,backend/materia-grpc/target,backend/monolith/target,backend/identity-service/target,backend/masterdata-service/target,backend/finance-service/target,backend/analytics-service/target,backend/gateway-service/target
+          skip-dirs: frontend/node_modules,backend/materia-common/target,backend/materia-grpc/target,backend/procurement-service/target,backend/identity-service/target,backend/masterdata-service/target,backend/finance-service/target,backend/analytics-service/target,backend/gateway-service/target
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           trivyignores: .trivyignore
@@ -345,7 +345,7 @@ jobs:
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
-          scan-ref: backend/monolith/target
+          scan-ref: backend/procurement-service/target
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -423,7 +423,7 @@ jobs:
         with:
           name: backend-jar
           retention-days: 3
-          path: backend/monolith/target/*.jar
+          path: backend/procurement-service/target/*.jar
 
       - name: Keep the scanned identity JAR for its image
         uses: actions/upload-artifact@v4
@@ -477,7 +477,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: backend-jar
-          path: backend/monolith/target
+          path: backend/procurement-service/target
 
       - name: Get the identity JAR
         uses: actions/download-artifact@v4
@@ -510,7 +510,7 @@ jobs:
           path: backend/gateway-service/target
 
       - name: Build backend image
-        run: docker build --pull -t "$PROJECT-backend:$IMAGE_TAG" backend/monolith/
+        run: docker build --pull -t "$PROJECT-backend:$IMAGE_TAG" backend/procurement-service/
 
       - name: Build identity image
         run: docker build --pull -t "$PROJECT-identity:$IMAGE_TAG" backend/identity-service/

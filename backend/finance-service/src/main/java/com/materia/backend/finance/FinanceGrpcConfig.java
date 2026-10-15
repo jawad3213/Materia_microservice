@@ -22,8 +22,7 @@ import java.util.Set;
 
 /**
  * Finance's gRPC: it serves finance.v1 (FinanceMetrics) on {@code app.grpc.server.port}, and reads procurement's
- * orders and receipts for the three-way match (procurement.v1 PurchaseOrderLookup, GoodsReceiptLookup, today in the
- * monolith at {@code app.grpc.monolith.target}). Identity's contracts are wired by the platform (IdentityClientConfig).
+ * orders and receipts for the three-way match (procurement.v1 PurchaseOrderLookup, GoodsReceiptLookup, at {@code app.grpc.procurement.target}). Identity's contracts are wired by the platform (IdentityClientConfig).
  */
 @Configuration
 public class FinanceGrpcConfig {
@@ -35,22 +34,22 @@ public class FinanceGrpcConfig {
     }
 
     @Bean(destroyMethod = "shutdownNow")
-    public ManagedChannel monolithChannel(OutgoingCallerToken tokens,
-                                          @Value("${app.grpc.monolith.target}") String target,
-                                          @Value("${app.grpc.monolith.deadline:5s}") Duration deadline) {
+    public ManagedChannel procurementChannel(OutgoingCallerToken tokens,
+                                          @Value("${app.grpc.procurement.target}") String target,
+                                          @Value("${app.grpc.procurement.deadline:5s}") Duration deadline) {
         return GrpcChannels.to(target, new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
                 new DefaultDeadlineClientInterceptor(deadline));
     }
 
     @Bean
     public PurchaseOrderLookupGrpc.PurchaseOrderLookupBlockingStub purchaseOrderLookupStub(
-            @Qualifier("monolithChannel") ManagedChannel monolithChannel) {
-        return PurchaseOrderLookupGrpc.newBlockingStub(monolithChannel);
+            @Qualifier("procurementChannel") ManagedChannel procurementChannel) {
+        return PurchaseOrderLookupGrpc.newBlockingStub(procurementChannel);
     }
 
     @Bean
     public GoodsReceiptLookupGrpc.GoodsReceiptLookupBlockingStub goodsReceiptLookupStub(
-            @Qualifier("monolithChannel") ManagedChannel monolithChannel) {
-        return GoodsReceiptLookupGrpc.newBlockingStub(monolithChannel);
+            @Qualifier("procurementChannel") ManagedChannel procurementChannel) {
+        return GoodsReceiptLookupGrpc.newBlockingStub(procurementChannel);
     }
 }

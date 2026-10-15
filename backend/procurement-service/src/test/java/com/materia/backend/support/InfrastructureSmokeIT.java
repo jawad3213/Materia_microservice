@@ -61,7 +61,7 @@ class InfrastructureSmokeIT extends AbstractIntegrationTest {
 
     /**
      * The shared kernel's tables: procurement's own copy (V14, one database per service), and the legacy ones every
-     * service shared in public, which the monolith's migrations still create on a new database.
+     * service shared in public, which procurement's migrations still create on a new database.
      */
     private static final List<String> SHARED_KERNEL = List.of("global_code_sequences", "outbox_messages",
             "processed_events", "audit_log", "exchange_rates", "attachments");

@@ -28,7 +28,7 @@ public class ServicesAuditFeed implements AuditFeed {
 
     public ServicesAuditFeed(@Qualifier("identityChannel") ManagedChannel identity,
                              @Qualifier("masterDataChannel") ManagedChannel masterData,
-                             @Qualifier("monolithChannel") ManagedChannel procurement,
+                             @Qualifier("procurementChannel") ManagedChannel procurement,
                              @Qualifier("financeChannel") ManagedChannel finance) {
         this.services = Stream.of(identity, masterData, procurement, finance).map(ChangeHistoryGrpc::newBlockingStub)
                 .toList();

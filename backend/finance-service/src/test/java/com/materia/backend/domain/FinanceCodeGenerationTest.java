@@ -14,7 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Finance's year-based codes (invoices, payments); the monolith's documents have their own test. */
+/** Finance's year-based codes (invoices, payments); procurement's documents have their own test. */
 class FinanceCodeGenerationTest {
 
     private static class InMemoryCodeSequenceRepository implements CodeSequenceRepository {

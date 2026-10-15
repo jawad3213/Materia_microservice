@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="backend2"/>
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="materia"/>
     <springProperty scope="context" name="env" source="SPRING_PROFILES_ACTIVE" defaultValue="dev"/>
     
     <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">

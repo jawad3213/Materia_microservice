@@ -19,6 +19,6 @@ class AuditedTypesTest {
     void readPermissions_comeFromTheAnnotations() {
         assertEquals(Optional.of(Optional.of("user:read")), AuditedTypes.readPermissionOf("User"));
         assertEquals(Optional.of(Optional.of("user:read")), AuditedTypes.readPermissionOf("Employee"));
-        assertTrue(AuditedTypes.readPermissionOf("PurchaseOrder").isEmpty(), "the monolith's records");
+        assertTrue(AuditedTypes.readPermissionOf("PurchaseOrder").isEmpty(), "procurement's records");
     }
 }

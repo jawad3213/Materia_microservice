@@ -55,6 +55,6 @@ class JwtAuthenticationFilterTest {
     @Test
     @DisplayName("security: a service token, valid between services, signs no one in over the REST API")
     void serviceToken_isRefused() throws Exception {
-        assertThat(authenticate(jwt.generateServiceToken("monolith"))).isNull();
+        assertThat(authenticate(jwt.generateServiceToken("procurement"))).isNull();
     }
 }

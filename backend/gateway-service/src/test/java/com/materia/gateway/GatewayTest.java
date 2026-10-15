@@ -36,7 +36,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The gateway in front of two stand-in services, the monolith and Identity (which publishes the JWK set), that record
+ * The gateway in front of two stand-in services, procurement and Identity (which publishes the JWK set), that record
  * what reaches them: what is routed where, what is refused before a service sees it, and what a service receives.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -50,7 +50,7 @@ class GatewayTest {
 
     /** Requests the stand-in services received, with which one and the headers that matter. */
     private static final List<Map<String, String>> RECEIVED = new CopyOnWriteArrayList<>();
-    private static final HttpServer BACKEND = service("backend");
+    private static final HttpServer PROCUREMENT = service("procurement");
     private static final HttpServer IDENTITY = service("identity");
     private static final HttpServer MASTER_DATA = service("masterdata");
     private static final HttpServer FINANCE = service("finance");
@@ -58,7 +58,7 @@ class GatewayTest {
 
     @DynamicPropertySource
     static void routes(DynamicPropertyRegistry registry) {
-        registry.add("gateway.backend-uri", () -> "http://localhost:" + BACKEND.getAddress().getPort());
+        registry.add("gateway.procurement-uri", () -> "http://localhost:" + PROCUREMENT.getAddress().getPort());
         registry.add("gateway.identity-uri", () -> "http://localhost:" + IDENTITY.getAddress().getPort());
         registry.add("gateway.master-data-uri", () -> "http://localhost:" + MASTER_DATA.getAddress().getPort());
         registry.add("gateway.finance-uri", () -> "http://localhost:" + FINANCE.getAddress().getPort());
@@ -67,7 +67,7 @@ class GatewayTest {
 
     @AfterAll
     static void stop() {
-        BACKEND.stop(0);
+        PROCUREMENT.stop(0);
         IDENTITY.stop(0);
         MASTER_DATA.stop(0);
         FINANCE.stop(0);
@@ -169,7 +169,7 @@ class GatewayTest {
     }
 
     @Test
-    @DisplayName("gateway: sign-in, accounts, employees and their history go to Identity, the rest to the monolith")
+    @DisplayName("gateway: sign-in, accounts, employees and their history go to Identity, the rest to procurement")
     void identityPaths_goToIdentity() {
         String token = validToken();
         for (String path : List.of("/api/v1/auth/me", "/api/v1/employees", "/api/v1/employees/42",
@@ -185,9 +185,9 @@ class GatewayTest {
                 "/api/v1/audit/Employee/42 -> identity",
                 "/api/v1/audit/User/42 -> identity",
                 "/api/v1/audit/Material/42 -> masterdata",
-                "/api/v1/audit -> backend",
+                "/api/v1/audit -> procurement",
                 "/api/v1/invoices -> finance",
-                "/api/v1/authors -> backend");
+                "/api/v1/authors -> procurement");
     }
 
     @Test
@@ -204,7 +204,7 @@ class GatewayTest {
                 "/api/v1/masterdata/suppliers/42 -> masterdata",
                 "/api/v1/audit/Material/42 -> masterdata",
                 "/api/v1/audit/Category/42 -> masterdata",
-                "/api/v1/audit/PurchaseOrder/42 -> backend");
+                "/api/v1/audit/PurchaseOrder/42 -> procurement");
     }
 
     @Test
@@ -224,14 +224,14 @@ class GatewayTest {
                 "/api/v1/settings -> finance",
                 "/api/v1/audit/Invoice/42 -> finance",
                 "/api/v1/attachments -> finance",
-                "/api/v1/attachments -> backend",
+                "/api/v1/attachments -> procurement",
                 "/api/v1/attachments/42/content -> finance",
-                "/api/v1/attachments/42/content -> backend",
-                "/api/v1/invoicesx -> backend");
+                "/api/v1/attachments/42/content -> procurement",
+                "/api/v1/invoicesx -> procurement");
     }
 
     @Test
-    @DisplayName("gateway: the dashboard goes to analytics, procurement stays with the monolith")
+    @DisplayName("gateway: the dashboard goes to analytics, the rest to procurement")
     void dashboard_goesToAnalytics() {
         String token = validToken();
         for (String path : List.of("/api/v1/dashboard", "/api/v1/dashboard/overview", "/api/v1/purchase-orders")) {
@@ -241,7 +241,7 @@ class GatewayTest {
         assertThat(RECEIVED).extracting(r -> r.get("path") + " -> " + r.get("service")).containsExactly(
                 "/api/v1/dashboard -> analytics",
                 "/api/v1/dashboard/overview -> analytics",
-                "/api/v1/purchase-orders -> backend");
+                "/api/v1/purchase-orders -> procurement");
     }
 
     @Test

@@ -24,25 +24,25 @@ class ServiceTokenServiceTest {
             900_000L);
     private final ServiceTokenService service = new ServiceTokenService(
             new ConfiguredServiceClients(new MockEnvironment()
-                    .withProperty("app.service-clients.monolith", "s3cret")
+                    .withProperty("app.service-clients.procurement", "s3cret")
                     .withProperty("app.service-clients.unconfigured", "")),
             new JwtTokenIssuer(jwt));
 
     @Test
     @DisplayName("service tokens: a registered service with its secret gets a service token for itself")
     void registeredService_getsItsToken() {
-        ServiceTokenUseCase.IssuedServiceToken issued = service.issue("monolith", "s3cret");
+        ServiceTokenUseCase.IssuedServiceToken issued = service.issue("procurement", "s3cret");
 
         assertThat(jwt.validateAccessToken(issued.token())).isTrue();
         assertThat(jwt.isServiceToken(issued.token())).isTrue();
-        assertThat(jwt.getSubjectFromAccessToken(issued.token())).isEqualTo("service:monolith");
+        assertThat(jwt.getSubjectFromAccessToken(issued.token())).isEqualTo("service:procurement");
         assertThat(issued.expiresInSeconds()).isEqualTo(900);
     }
 
     @Test
     @DisplayName("service tokens: a wrong secret, an unknown client or a client without a secret gets nothing")
     void wrongCredentials_areRefused() {
-        assertThatThrownBy(() -> service.issue("monolith", "guess")).isInstanceOf(InvalidCredentialsException.class);
+        assertThatThrownBy(() -> service.issue("procurement", "guess")).isInstanceOf(InvalidCredentialsException.class);
         assertThatThrownBy(() -> service.issue("intruder", "s3cret")).isInstanceOf(InvalidCredentialsException.class);
         assertThatThrownBy(() -> service.issue("unconfigured", "")).isInstanceOf(InvalidCredentialsException.class);
         assertThatThrownBy(() -> service.issue(null, "s3cret")).isInstanceOf(InvalidCredentialsException.class);

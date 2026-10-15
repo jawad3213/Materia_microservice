@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.retry.annotation.EnableRetry;
 
 /**
- * The master data service: the masterData context, on the shared platform. Its package is the monolith's, so the
+ * The master data service: the masterData context, on the shared platform. Its package is procurement's, so the
  * same component scan finds the context and the platform on its classpath, and nothing else.
  */
 @SpringBootApplication

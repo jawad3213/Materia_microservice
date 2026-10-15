@@ -109,11 +109,17 @@ resource "tls_private_key" "jwt" {
   rsa_bits  = 2048
 }
 
-# The secret the backend presents to identity for its service tokens (identity.v1.ServiceTokens): the backend
-# sends it as SERVICE_CLIENT_SECRET, identity checks it against SERVICE_CLIENT_MONOLITH_SECRET.
-resource "random_password" "service_client_monolith" {
+# The secret procurement presents to identity for its service tokens (identity.v1.ServiceTokens): procurement
+# sends it as SERVICE_CLIENT_SECRET, identity checks it against SERVICE_CLIENT_PROCUREMENT_SECRET.
+resource "random_password" "service_client_procurement" {
   length  = 48
   special = false # the value goes through a docker compose .env file
+}
+
+# Named after the monolith before procurement-service: the same secret, not a new one.
+moved {
+  from = random_password.service_client_monolith
+  to   = random_password.service_client_procurement
 }
 
 # The secret master data presents to identity for its service tokens.
@@ -173,20 +179,21 @@ module "app_parameters" {
   parameters = merge(local.default_app_config, local.bootstrap_admin.config, var.app_config)
   secure_parameters = merge(
     {
-      POSTGRES_PASSWORD                = random_password.postgres.result
-      JWT_PRIVATE_KEY                  = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
-      JWT_PUBLIC_KEY                   = base64encode(tls_private_key.jwt.public_key_pem)
-      GRAFANA_ADMIN_PASSWORD           = random_password.grafana_admin.result
-      SERVICE_CLIENT_SECRET            = random_password.service_client_monolith.result
-      SERVICE_CLIENT_MONOLITH_SECRET   = random_password.service_client_monolith.result
-      SERVICE_CLIENT_MASTERDATA_SECRET = random_password.service_client_masterdata.result
-      SERVICE_CLIENT_FINANCE_SECRET    = random_password.service_client_finance.result
-      SERVICE_CLIENT_ANALYTICS_SECRET  = random_password.service_client_analytics.result
-      DB_PASSWORD_IDENTITY             = random_password.db_service["identity"].result
-      DB_PASSWORD_MASTERDATA           = random_password.db_service["masterdata"].result
-      DB_PASSWORD_PROCUREMENT          = random_password.db_service["procurement"].result
-      DB_PASSWORD_FINANCE              = random_password.db_service["finance"].result
-      DB_PASSWORD_ANALYTICS            = random_password.db_service["analytics"].result
+      POSTGRES_PASSWORD                 = random_password.postgres.result
+      JWT_PRIVATE_KEY                   = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
+      JWT_PUBLIC_KEY                    = base64encode(tls_private_key.jwt.public_key_pem)
+      GRAFANA_ADMIN_PASSWORD            = random_password.grafana_admin.result
+      SERVICE_CLIENT_SECRET             = random_password.service_client_procurement.result
+      SERVICE_CLIENT_PROCUREMENT_SECRET = random_password.service_client_procurement.result
+      SERVICE_CLIENT_MONOLITH_SECRET    = random_password.service_client_procurement.result # images before the rename; drop after the next release
+      SERVICE_CLIENT_MASTERDATA_SECRET  = random_password.service_client_masterdata.result
+      SERVICE_CLIENT_FINANCE_SECRET     = random_password.service_client_finance.result
+      SERVICE_CLIENT_ANALYTICS_SECRET   = random_password.service_client_analytics.result
+      DB_PASSWORD_IDENTITY              = random_password.db_service["identity"].result
+      DB_PASSWORD_MASTERDATA            = random_password.db_service["masterdata"].result
+      DB_PASSWORD_PROCUREMENT           = random_password.db_service["procurement"].result
+      DB_PASSWORD_FINANCE               = random_password.db_service["finance"].result
+      DB_PASSWORD_ANALYTICS             = random_password.db_service["analytics"].result
     },
     local.bootstrap_admin.secrets,
     var.extra_secrets,

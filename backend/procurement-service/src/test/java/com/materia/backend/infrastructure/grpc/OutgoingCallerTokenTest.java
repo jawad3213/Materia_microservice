@@ -51,7 +51,7 @@ class OutgoingCallerTokenTest {
             }
         }).build().start();
         channel = InProcessChannelBuilder.forName(name).directExecutor().build();
-        tokens = new OutgoingCallerToken(ServiceTokensGrpc.newBlockingStub(channel), "monolith", "s3cret");
+        tokens = new OutgoingCallerToken(ServiceTokensGrpc.newBlockingStub(channel), "procurement", "s3cret");
     }
 
     @AfterEach
@@ -75,7 +75,7 @@ class OutgoingCallerTokenTest {
     void noUser_getsAServiceTokenFromIdentity() {
         assertThat(tokens.get()).contains("service-token-1");
 
-        assertThat(lastRequest.get().getClientId()).isEqualTo("monolith");
+        assertThat(lastRequest.get().getClientId()).isEqualTo("procurement");
         assertThat(lastRequest.get().getClientSecret()).isEqualTo("s3cret");
     }
 

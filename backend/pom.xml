@@ -28,7 +28,7 @@
         <!-- The test infrastructure every service's tests share (test scope only). -->
         <module>materia-test-support</module>
         <!-- Today's application: every context in one deployable, extracted service by service. -->
-        <module>monolith</module>
+        <module>procurement-service</module>
         <!-- Identity: accounts, sign-in, tokens and employees; the only signer of tokens. -->
         <module>identity-service</module>
         <!-- Master data: materials, categories, suppliers and stock. -->
@@ -62,7 +62,7 @@
         <protobuf.version>3.25.5</protobuf.version>
         <!-- Lets modules without a JaCoCo agent use @{argLine} in the Surefire configuration below. -->
         <argLine/>
-        <!-- Libraries have nothing to run: `./mvnw -pl monolith -am spring-boot:run` starts the monolith only. -->
+        <!-- Libraries have nothing to run: `./mvnw -pl procurement-service -am spring-boot:run` starts procurement only. -->
         <spring-boot.run.skip>true</spring-boot.run.skip>
     </properties>
 

@@ -7,8 +7,8 @@
         <artifactId>materia-backend</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
-    <artifactId>materia-monolith</artifactId>
-    <name>materia-monolith</name>
+    <artifactId>procurement-service</artifactId>
+    <name>procurement-service</name>
     <description>
         Every bounded context in one deployable. Services are extracted from it one at a time; what remains at the
         end becomes the procurement service.

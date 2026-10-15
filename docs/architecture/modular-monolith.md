@@ -1,8 +1,9 @@
-# Modular monolith: boundaries and the path to services
+# Services: boundaries, contracts and data
 
-The backend is one deployable, but its bounded contexts are kept separable so each group can become its own
-service. `ModuleBoundariesTest` (ArchUnit) fails the build when a rule below is broken, and `DataOwnershipTest` fails
-it when a SQL or JPQL query names another context's table or entity.
+The backend started as one deployable (a modular monolith) whose bounded contexts were kept separable; each group is
+now its own service, procurement included (`backend/procurement-service`, formerly `backend/monolith`).
+`ModuleBoundariesTest` (ArchUnit) fails the build when a rule below is broken, and `DataOwnershipTest` fails it when a
+SQL or JPQL query names another context's table or entity.
 
 ## Target services
 
@@ -34,10 +35,10 @@ The only way in from outside: the frontend's nginx proxies `/api` (and the API d
 them to the service that owns the path: identity (`/api/v1/auth`, `/api/v1/employees`, the JWK set), master data
 (`/api/v1/masterdata`), finance (`/api/v1/invoices`, `/api/v1/payments`, `/api/v1/settings`, and the attachments of
 invoices: `ownerType=INVOICE`), analytics (`/api/v1/dashboard`), each with the change history of its own records
-(`/api/v1/audit/<Type>`), and the monolith (procurement) for the rest. Anything not routed (actuator, internal endpoints) answers 404.
+(`/api/v1/audit/<Type>`), and procurement for the rest. Anything not routed (actuator, internal endpoints) answers 404.
 
 ```
-browser ─▶ nginx (frontend) ─▶ gateway ─▶ backend (monolith) ─▶ PostgreSQL
+browser ─▶ nginx (frontend) ─▶ gateway ─▶ procurement (or the service owning the path) ─▶ PostgreSQL
            sets X-Real-IP       trace id     verifies the token again,
                                 rate limit   checks the permission
                                 token check
@@ -46,12 +47,12 @@ browser ─▶ nginx (frontend) ─▶ gateway ─▶ backend (monolith) ─▶ 
 | Filter | Does |
 |---|---|
 | `TraceIdFilter` | Gives every request an `X-Gateway-Trace-Id` (keeps the caller's when it is a safe value), on the request to the service and on the response. |
-| `RateLimitFilter` | 120 requests a minute per client, 10 for sign-in and password reset. The client is `X-Real-IP` (set by nginx). The monolith keeps its own limiter as a second line. |
+| `RateLimitFilter` | 120 requests a minute per client, 10 for sign-in and password reset. The client is `X-Real-IP` (set by nginx). Procurement keeps its own limiter as a second line. |
 | `BearerTokenFilter` | Verifies a bearer token with Identity's JWK set (`/.well-known/jwks.json`, cached by Nimbus); refuses forged, expired and service tokens with 401 before any service sees them. A request without a token goes on: the service decides whether its path needs one. |
 
-Configuration: `GATEWAY_BACKEND_URI` (the monolith's address), `GATEWAY_JWKS_URI` (defaults to the backend's
-JWK set), `GATEWAY_RATE_LIMIT_*`. CORS stays in the monolith for now. In the browser the API is same-origin through
-nginx, so only the Vite dev server (calling the backend directly) needs it.
+Configuration: `GATEWAY_PROCUREMENT_URI` (procurement's address), `GATEWAY_<SERVICE>_URI` for the others,
+`GATEWAY_JWKS_URI` (defaults to Identity's JWK set), `GATEWAY_RATE_LIMIT_*`. CORS stays in the services for now. In
+the browser the API is same-origin through nginx, so only the Vite dev server (calling a service directly) needs it.
 
 ## One database per service
 
@@ -90,14 +91,14 @@ database server of its own is a dump of its schema.
 ## Modules (`backend/`)
 
 `backend/pom.xml` is the parent of every module. Build and test everything from `backend/` with `./mvnw test`; run
-the application with `./mvnw -pl monolith -am spring-boot:run`.
+a service with `./mvnw -pl <module> -am spring-boot:run` (procurement: `-pl procurement-service`).
 
 | Module | Holds | Depends on |
 |---|---|---|
 | `materia-common` | The shared kernel above (`com.materia.backend.common`). | Spring, JPA, Kafka |
 | `materia-grpc` | The contracts between services (`src/main/proto/materia/<service>/v1`), the stubs generated from them (`com.materia.proto.*`), and the interceptors every service installs (`com.materia.grpc.*`). | `materia-common`, grpc-java |
 | `materia-platform` | What every service runs on: security chain, token keys, error handling, database and Kafka setup, the gRPC server, channels and identity client. | `materia-common`, `materia-grpc` |
-| `monolith` | Procurement (`purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor`): REST 8080, gRPC `procurement.v1` 9090; its legacy migrations create the schemas and own the legacy tables in `public`. The procurement service in all but name. | `materia-platform` |
+| `procurement-service` | Procurement (`purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor`): REST 8080, gRPC `procurement.v1` 9090; its legacy migrations create the schemas and own the legacy tables in `public`. Its docker compose service is `procurement` locally and still `backend` on EC2 (its ECR repository too), so a rollback finds the images it redeploys. | `materia-platform` |
 | `identity-service` | Identity (`auth`, `employee`): REST 8082, gRPC `identity.v1` 9091; the only signer of tokens. | `materia-platform` |
 | `masterdata-service` | Master data (`masterData`): REST 8083, gRPC `masterdata.v1` 9092; keeps stock from procurement's events (Kafka). | `materia-platform` |
 | `finance-service` | Finance (`invoice`, `payment`, `settings`): REST 8084, gRPC `finance.v1` 9093; reads procurement's orders and receipts (`procurement.v1`) for the three-way match. | `materia-platform` |
@@ -178,13 +179,13 @@ invoice.application.InvoiceService                        (finance)
                   └─ PurchaseOrderLookupUseCase           (procurement)
 ```
 
-Inside the monolith the server and channel are in process and run the call on the caller's thread, so it joins the
+Between the contexts of one service (and in tests) the server and channel are in process and run the call on the caller's thread, so it joins the
 caller's transaction as the direct call it replaced did. Extracting a service changes the channel's address; the
 adapter, the service and their tests do not change. Tests reach other services the same way
 (`support/fixtures/InProcessGrpc`, used by `CrossContextWiring`).
 
 A call carries the caller's token: the one of the gRPC call being served, else the signed-in user's (kept by the
-gateway's JWT filter in a `BearerTokenAuthentication`), else a service token (`subject = service:monolith`,
+gateway's JWT filter in a `BearerTokenAuthentication`), else a service token (`subject = service:<client id>`, e.g. `service:procurement`,
 `ROLE_SERVICE`) for work no user started. The REST API refuses service tokens.
 
 Public lookups added for this purpose:
@@ -226,7 +227,7 @@ mocked repositories, so service tests keep stubbing what they always did.
 - Events must stay plain data (strings, numbers, ids, enums): they are serialized to JSON.
 - `KafkaEventsIT` runs the whole pipeline against a real broker (Testcontainers): commit, outbox, relay, topic,
   consumer, handler. The local Docker Compose stack runs with Kafka (`APP_MESSAGING_TYPE=kafka`,
-  `APP_OUTBOX_RELAY_ENABLED=true`); the AWS stack has no broker yet and stays in process.
+  `APP_OUTBOX_RELAY_ENABLED=true`); so does the AWS stack (one broker on the EC2 host).
 
 ### Procurement and master data
 

@@ -20,8 +20,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
- * Analytics' gRPC: it serves nothing, and reads the reporting figures of procurement (procurement.v1, today in the
- * monolith at {@code app.grpc.monolith.target}), master data ({@code app.grpc.masterdata.target}) and finance
+ * Analytics' gRPC: it serves nothing, and reads the reporting figures of procurement (procurement.v1, at {@code app.grpc.procurement.target}), master data ({@code app.grpc.masterdata.target}) and finance
  * ({@code app.grpc.finance.target}). Identity's contracts are wired by the platform (IdentityClientConfig).
  */
 @Configuration
@@ -33,8 +32,8 @@ public class AnalyticsGrpcConfig {
     }
 
     @Bean(destroyMethod = "shutdownNow")
-    public ManagedChannel monolithChannel(OutgoingCallerToken tokens, @Value("${app.grpc.monolith.target}") String target,
-                                          @Value("${app.grpc.monolith.deadline:5s}") Duration deadline) {
+    public ManagedChannel procurementChannel(OutgoingCallerToken tokens, @Value("${app.grpc.procurement.target}") String target,
+                                          @Value("${app.grpc.procurement.deadline:5s}") Duration deadline) {
         return channel(tokens, target, deadline);
     }
 
@@ -63,7 +62,7 @@ public class AnalyticsGrpcConfig {
 
     @Bean
     public ProcurementMetricsGrpc.ProcurementMetricsBlockingStub procurementMetricsStub(
-            @Qualifier("monolithChannel") ManagedChannel channel) {
+            @Qualifier("procurementChannel") ManagedChannel channel) {
         return ProcurementMetricsGrpc.newBlockingStub(channel);
     }
 

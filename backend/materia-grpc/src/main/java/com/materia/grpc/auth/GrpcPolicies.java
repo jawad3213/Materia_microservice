@@ -25,7 +25,7 @@ import java.util.Optional;
  *
  * <p>Users reach these RPCs with their own token, which a service forwards while it serves their request; services
  * reach them with their service token for work no user started. The service names are their client ids
- * ({@code app.service-client.id}): monolith (procurement), masterdata, finance, analytics.
+ * ({@code app.service-client.id}): procurement, masterdata, finance, analytics.
  */
 public final class GrpcPolicies {
 
@@ -43,7 +43,7 @@ public final class GrpcPolicies {
         // ---- masterdata.v1 ----
         // The catalogue, as GET /api/v1/masterdata/materials shows it. Procurement reads it for its users (requisition
         // lines, receipt checks) and for its own jobs and seeding, or for master data's (a replenishment it raises).
-        RpcPolicy catalogue = RpcPolicy.users("material:read").orServices("monolith", "masterdata");
+        RpcPolicy catalogue = RpcPolicy.users("material:read").orServices("procurement", "masterdata");
         put(MaterialCatalogGrpc.getFindMaterialMethod(), catalogue);
         put(MaterialCatalogGrpc.getFindMaterialByCodeMethod(), catalogue);
         put(MaterialCatalogGrpc.getFindOrderableMaterialsMethod(), catalogue);
