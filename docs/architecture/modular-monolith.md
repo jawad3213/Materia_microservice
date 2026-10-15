@@ -246,7 +246,5 @@ raises replenishment requisitions in procurement with a command (`procurement.v1
 
 - **Retiring the legacy tables in `public`:** once every environment has run each service's copy migration, a
   procurement migration can drop them (no service reads them).
-- `RequisitionOutput.getLines()` still exposes requisition entities to the requisition web layer; other
-  contexts must use `getLineSummaries()`.
 - **The dashboard's metrics** cross services through 32 fine-grained RPCs. When analytics is extracted, measure how
   many a dashboard load makes; an event-fed read model in analytics can replace the hottest ones.

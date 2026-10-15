@@ -2,6 +2,7 @@ package com.materia.backend.contexts.purchaseRequisition.infrastructure.adapters
 
 import com.materia.backend.common.infrastructure.web.BaseWebMapper;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.CreateRequisitionInput;
+import com.materia.backend.contexts.purchaseRequisition.application.dtos.RequisitionLineOutput;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.RequisitionOutput;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.RequisitionSearchCriteria;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.UpdateRequisitionInput;
@@ -115,7 +116,7 @@ public class RequisitionWebMapper implements BaseWebMapper<
         return line;
     }
 
-    private List<RequisitionLineWebResponse> toWebLines(List<RequisitionLine> appLines) {
+    private List<RequisitionLineWebResponse> toWebLines(List<RequisitionLineOutput> appLines) {
         if (appLines == null) {
             return new ArrayList<>();
         }
@@ -125,16 +126,36 @@ public class RequisitionWebMapper implements BaseWebMapper<
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
-    private RequisitionLineWebResponse toWebLine(RequisitionLine appLine) {
+    private RequisitionLineWebResponse toWebLine(RequisitionLineOutput appLine) {
         if (appLine == null) {
             return null;
         }
 
         RequisitionLineWebResponse response = new RequisitionLineWebResponse();
-        BeanUtils.copyProperties(appLine, response, "standardPrice", "unitPrice", "lineTotal");
-        response.setStandardPrice(appLine.getStandardPrice() != null ? appLine.getStandardPrice().format() : null);
-        response.setUnitPrice(appLine.getUnitPrice() != null ? appLine.getUnitPrice().format() : null);
-        response.setLineTotal(appLine.getLineTotal() != null ? appLine.getLineTotal().format() : null);
+        response.setId(appLine.id());
+        response.setLineNumber(appLine.lineNumber());
+        response.setMaterialCode(appLine.materialCode());
+        response.setMaterialId(appLine.materialId());
+        response.setMaterialName(appLine.materialName());
+        response.setMaterialDescription(appLine.materialDescription());
+        response.setUnitOfMeasure(appLine.unitOfMeasure());
+        response.setStandardPrice(appLine.standardPrice() != null ? appLine.standardPrice().format() : null);
+        response.setUnitPrice(appLine.unitPrice() != null ? appLine.unitPrice().format() : null);
+        response.setCurrencyCode(appLine.currencyCode());
+        response.setQuantity(appLine.quantity());
+        response.setQuantityReceived(appLine.quantityReceived());
+        response.setQuantityRejected(appLine.quantityRejected());
+        response.setRequiredDate(appLine.requiredDate());
+        response.setLineTotal(appLine.lineTotal() != null ? appLine.lineTotal().format() : null);
+        response.setCurrencyCodeLine(appLine.currencyCodeLine());
+        response.setSupplierId(appLine.supplierId());
+        response.setSupplierName(appLine.supplierName());
+        response.setSupplierCode(appLine.supplierCode());
+        response.setNotes(appLine.notes());
+        response.setDeliveryTerms(appLine.deliveryTerms());
+        response.setStorageLocation(appLine.storageLocation());
+        response.setBatchNumber(appLine.batchNumber());
+        response.setExpiryDate(appLine.expiryDate());
         return response;
     }
 }
