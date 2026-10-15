@@ -2,14 +2,11 @@ package com.materia.backend.architecture;
 
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptLookupUseCase;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptMetricsUseCase;
-import com.materia.backend.contexts.invoice.domain.ports.in.InvoiceMetricsUseCase;
-import com.materia.backend.contexts.payment.domain.ports.in.PaymentMetricsUseCase;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.in.PurchaseOrderLookupUseCase;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.in.PurchaseOrderMetricsUseCase;
 import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.ReplenishmentUseCase;
 import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.RequisitionMetricsUseCase;
 import com.materia.backend.contexts.returnToVendor.domain.ports.in.ReturnMetricsUseCase;
-import com.materia.proto.finance.v1.FinanceMetricsGrpc;
 import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
 import com.materia.proto.procurement.v1.ProcurementMetricsGrpc;
 import com.materia.proto.procurement.v1.PurchaseOrderLookupGrpc;
@@ -37,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Each gRPC contract (materia-grpc) mirrors the public use cases another service calls, method for method. A method
  * added to one of these use cases needs its RPC, or an explicit reason to stay off the contract; an RPC needs the
- * method it serves. Identity's and master data's contracts are checked by their services.
+ * method it serves. Identity's, master data's and finance's contracts are checked by their services.
  */
 class GrpcContractsTest {
 
@@ -54,7 +51,8 @@ class GrpcContractsTest {
                         new Mirror(PurchaseOrderLookupUseCase.class, Map.of("findOrder", "FindOrder")))),
                 Arguments.of(GoodsReceiptLookupGrpc.getServiceDescriptor(), List.of(
                         new Mirror(GoodsReceiptLookupUseCase.class,
-                                Map.of("findReceipt", "FindReceipt", "findReceiptsForOrder", "FindReceiptsForOrder")))),
+                                Map.of("findReceipt", "FindReceipt", "findReceiptsForOrder", "FindReceiptsForOrder",
+                                        "findValidatedReceipts", "FindValidatedReceipts")))),
                 Arguments.of(ReplenishmentGrpc.getServiceDescriptor(), List.of(
                         new Mirror(ReplenishmentUseCase.class, Map.of(
                                 "hasOpenRequisitionFor", "HasOpenRequisitionFor",
@@ -81,20 +79,7 @@ class GrpcContractsTest {
                                 "totalsBySupplier", "ReceiptTotalsBySupplier",
                                 "latest", "LatestReceipts")),
                         new Mirror(ReturnMetricsUseCase.class,
-                                Map.of("countInStatus", "CountReturnsInStatus", "latest", "LatestReturns")))),
-                Arguments.of(FinanceMetricsGrpc.getServiceDescriptor(), List.of(
-                        new Mirror(InvoiceMetricsUseCase.class, Map.of(
-                                "documentsByCurrency", "InvoicesByCurrency",
-                                "valuedAtOwnDate", "InvoicesValuedAtOwnDate",
-                                "outstandingByDueDate", "OutstandingByDueDate",
-                                "invoicedByMonth", "InvoicedByMonth",
-                                "latest", "LatestInvoices")),
-                        new Mirror(PaymentMetricsUseCase.class, Map.of(
-                                "documentsByCurrency", "PaymentsByCurrency",
-                                "valuedAtOwnDate", "PaymentsValuedAtOwnDate",
-                                "countInStatus", "CountPaymentsInStatus",
-                                "byMonth", "PaymentsByMonth",
-                                "latest", "LatestPayments")))));
+                                Map.of("countInStatus", "CountReturnsInStatus", "latest", "LatestReturns")))));
     }
 
     @ParameterizedTest(name = "{0}")

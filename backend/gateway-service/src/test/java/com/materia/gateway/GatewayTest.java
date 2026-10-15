@@ -53,12 +53,14 @@ class GatewayTest {
     private static final HttpServer BACKEND = service("backend");
     private static final HttpServer IDENTITY = service("identity");
     private static final HttpServer MASTER_DATA = service("masterdata");
+    private static final HttpServer FINANCE = service("finance");
 
     @DynamicPropertySource
     static void routes(DynamicPropertyRegistry registry) {
         registry.add("gateway.backend-uri", () -> "http://localhost:" + BACKEND.getAddress().getPort());
         registry.add("gateway.identity-uri", () -> "http://localhost:" + IDENTITY.getAddress().getPort());
         registry.add("gateway.master-data-uri", () -> "http://localhost:" + MASTER_DATA.getAddress().getPort());
+        registry.add("gateway.finance-uri", () -> "http://localhost:" + FINANCE.getAddress().getPort());
     }
 
     @AfterAll
@@ -66,6 +68,7 @@ class GatewayTest {
         BACKEND.stop(0);
         IDENTITY.stop(0);
         MASTER_DATA.stop(0);
+        FINANCE.stop(0);
     }
 
     @Autowired private WebTestClient client;
@@ -180,7 +183,7 @@ class GatewayTest {
                 "/api/v1/audit/User/42 -> identity",
                 "/api/v1/audit/Material/42 -> masterdata",
                 "/api/v1/audit -> backend",
-                "/api/v1/invoices -> backend",
+                "/api/v1/invoices -> finance",
                 "/api/v1/authors -> backend");
     }
 
@@ -199,6 +202,28 @@ class GatewayTest {
                 "/api/v1/audit/Material/42 -> masterdata",
                 "/api/v1/audit/Category/42 -> masterdata",
                 "/api/v1/audit/PurchaseOrder/42 -> backend");
+    }
+
+    @Test
+    @DisplayName("gateway: invoices, payments, settings, their history and invoices' attachments go to finance")
+    void financePaths_goToFinance() {
+        String token = validToken();
+        for (String path : List.of("/api/v1/invoices", "/api/v1/payments/42", "/api/v1/settings",
+                "/api/v1/audit/Invoice/42", "/api/v1/attachments?ownerType=INVOICE&ownerId=42",
+                "/api/v1/attachments?ownerType=PURCHASE_ORDER&ownerId=42", "/api/v1/attachments/42/content",
+                "/api/v1/invoicesx")) {
+            client.get().uri(path).header("Authorization", "Bearer " + token).exchange().expectStatus().isOk();
+        }
+
+        assertThat(RECEIVED).extracting(r -> r.get("path") + " -> " + r.get("service")).containsExactly(
+                "/api/v1/invoices -> finance",
+                "/api/v1/payments/42 -> finance",
+                "/api/v1/settings -> finance",
+                "/api/v1/audit/Invoice/42 -> finance",
+                "/api/v1/attachments -> finance",
+                "/api/v1/attachments -> backend",
+                "/api/v1/attachments/42/content -> backend",
+                "/api/v1/invoicesx -> backend");
     }
 
     @Test

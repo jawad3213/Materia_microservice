@@ -38,6 +38,16 @@ public class GoodsReceiptLookupService implements GoodsReceiptLookupUseCase {
                 .toList();
     }
 
+    @Override
+    public List<GoodsReceiptView> findValidatedReceipts(int limit) {
+        return VALIDATED.stream()
+                .flatMap(status -> goodsReceiptRepository.findByStatus(status).stream())
+                .sorted(java.util.Comparator.comparing(receipt -> String.valueOf(receipt.getReceiptCode())))
+                .limit(Math.max(0, limit))
+                .map(GoodsReceiptLookupService::toView)
+                .toList();
+    }
+
     private static GoodsReceiptView toView(GoodsReceipt receipt) {
         return new GoodsReceiptView(
                 receipt.getId(),
@@ -48,6 +58,7 @@ public class GoodsReceiptLookupService implements GoodsReceiptLookupUseCase {
                 receipt.getPurchaseOrderCode(),
                 receipt.getSupplierId(),
                 receipt.getSupplierName(),
+                receipt.getReceiptDate(),
                 receipt.getLines().stream()
                         .map(line -> new GoodsReceiptView.Line(line.getId(), line.getPurchaseOrderLineId(),
                                 line.getMaterialId(), line.getMaterialCode(), line.getMaterialName(),

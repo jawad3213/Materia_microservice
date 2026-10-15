@@ -1,5 +1,6 @@
 package com.materia.backend.contexts.dashboard.infrastructure.adapters.out.persistence;
 
+import com.materia.backend.common.application.metrics.RecentDocument;
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.fx.FxDocument;
 import com.materia.backend.common.domain.fx.FxValuation;
@@ -9,6 +10,8 @@ import com.materia.backend.contexts.dashboard.application.dtos.DashboardOutput.K
 import com.materia.backend.contexts.dashboard.application.services.DashboardService;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel;
 import com.materia.backend.support.AbstractIntegrationTest;
+import com.materia.backend.support.fixtures.TestFinance;
+import com.materia.backend.support.fixtures.TestFinanceMetrics;
 import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.support.fixtures.TestMasterDataMetrics;
 import org.junit.jupiter.api.AfterEach;
@@ -31,6 +34,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static com.materia.backend.support.fixtures.TestFinanceMetrics.month;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -53,6 +57,7 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private DashboardReadModel readModel;
     @Autowired private TestMasterData masterData;
+    @Autowired private TestFinance finance;
 
     private DashboardService service;
     private final StubFx fx = new StubFx();
@@ -97,23 +102,33 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
         receipt(confirmed, acme, "PARTIAL", 10, 10, TODAY.minusMonths(1), TODAY.minusMonths(1));
         receipt(ready, globex, "DRAFT", 5, 5, null, null);
 
-        invoice("STANDARD", "VERIFIED", "400.00", null, TODAY.minusDays(40), TODAY.minusDays(30));
-        invoice("STANDARD", "SUBMITTED", "200.00", "50.00", TODAY.plusDays(10), TODAY.minusDays(5));
-        invoice("CREDIT_NOTE", "VERIFIED", "50.00", null, null, TODAY.minusDays(1));
-        invoice("STANDARD", "PAID", "100.00", "100.00", TODAY.minusDays(70), TODAY.minusMonths(3));
-
-        payment("COMPLETED", "250.00", TODAY.minusDays(2));
-        payment("COMPLETED", "100.00", TODAY.minusMonths(1));
-        payment("PENDING", "75.00", null);
+        // Finance's answers for its documents: a verified invoice of 400.00 issued a month ago and due 40 days ago, a
+        // submitted one of 200.00 (50.00 paid) due in 10 days, a credit note of 50.00 this month, an invoice of 100.00
+        // paid in July; payments of 250.00 this month and 100.00 last month, executed, and one of 75.00 to execute. How
+        // finance computes them is its own tests' business (FinanceMetricsIT); what the dashboard makes of them is this
+        // test's.
+        finance.metrics()
+                .outstanding(List.of(
+                        new TestFinanceMetrics.DueGroup(TODAY.minusDays(40), "MAD", 1, "400.00"),
+                        new TestFinanceMetrics.DueGroup(TODAY.plusDays(10), "MAD", 1, "150.00")))
+                .invoiced(List.of(month("2026-07", "100.00"), month("2026-09", "400.00"), month("2026-10", "150.00")))
+                .paid(List.of(month("2026-09", "100.00"), month("2026-10", "250.00")))
+                .pendingPayments(1)
+                .latest(List.of(document("INV", TODAY.minusDays(1)), document("INV", TODAY.minusDays(5)),
+                                document("INV", TODAY.minusDays(30)), document("INV", TODAY.minusMonths(3))),
+                        List.of(document("PAY", LocalDate.of(2026, 1, 1)), document("PAY", LocalDate.of(2026, 1, 1)),
+                                document("PAY", LocalDate.of(2026, 1, 1))))
+                .documents(Map.of("MAD", 4L), Map.of("MAD", 3L));
 
         returnToVendor("PENDING");
         returnToVendor("DRAFT");
     }
 
-    /** The stand-in is shared by every test of the JVM. */
+    /** The stand-ins are shared by every test of the JVM. */
     @AfterEach
-    void noMasterDataAnswers() {
+    void noOtherServicesAnswers() {
         masterData.metrics().answer(List.of(), Map.of(), Map.of());
+        finance.metrics().reset();
     }
 
     // ---- Tests ----
@@ -272,11 +287,9 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
 
     // ---- Scenario ----
 
-    /** Removes every document and material inside the test's transaction; the rollback brings them back. */
+    /** Removes every procurement document inside the test's transaction; the rollback brings them back. */
     private void emptyDocumentTables() {
         for (String sql : List.of(
-                "delete from payment_lines", "delete from payments",
-                "delete from invoice_lines", "delete from invoices",
                 "delete from return_to_vendor_lines", "delete from return_to_vendor",
                 "delete from goods_receipt_lines", "delete from goods_receipts",
                 "update purchase_requisitions set purchase_order_id = null",
@@ -340,22 +353,9 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
                 Timestamp.valueOf((receivedOn != null ? receivedOn : TODAY.minusDays(20)).atStartOfDay()));
     }
 
-    private void invoice(String type, String status, String total, String paid, LocalDate due, LocalDate date) {
-        jdbc.update("insert into invoices (id, invoice_code, invoice_type, status, supplier_id, supplier_name, invoice_date, "
-                        + "due_date, total_amount, total_tax_amount, total_amount_with_tax, paid_amount, currency_code, "
-                        + "is_verified, has_discrepancy, created_at, version) "
-                        + "values (?, ?, ?, ?, ?, 'Acme', ?, ?, ?, 0, ?, ?, 'MAD', false, false, ?, 0)",
-                UUID.randomUUID(), code("INV"), type, status, acme, Date.valueOf(date), due != null ? Date.valueOf(due) : null,
-                new BigDecimal(total), new BigDecimal(total), paid != null ? new BigDecimal(paid) : null,
-                Timestamp.valueOf(date.atStartOfDay()));
-    }
-
-    private void payment(String status, String total, LocalDate confirmed) {
-        jdbc.update("insert into payments (id, payment_code, status, supplier_id, supplier_name, total_amount, currency_code, "
-                        + "confirmed_date, created_at, version) values (?, ?, ?, ?, 'Acme', ?, 'MAD', ?, ?, 0)",
-                UUID.randomUUID(), code("PAY"), status, acme, new BigDecimal(total),
-                confirmed != null ? Timestamp.valueOf(confirmed.atTime(12, 0)) : null,
-                Timestamp.valueOf(LocalDateTime.of(2026, 1, 1, 0, 0)));
+    /** A document in finance's latest documents, created on {@code created}. */
+    private RecentDocument document(String prefix, LocalDate created) {
+        return new RecentDocument(UUID.randomUUID(), code(prefix), null, "VERIFIED", created.atStartOfDay());
     }
 
     private void returnToVendor(String status) {

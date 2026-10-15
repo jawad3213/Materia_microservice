@@ -13,8 +13,10 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
  *
  * <p>An extracted service gets its own routes by path prefix, checked before the monolith's catch-all: Identity
  * answers /api/v1/auth, /api/v1/employees, the history of its own records (User, Employee) and its public key; master
- * data /api/v1/masterdata and the history of its records (Material, Supplier, Category); the monolith the rest of the
- * API and its docs.
+ * data /api/v1/masterdata and the history of its records (Material, Supplier, Category); finance /api/v1/invoices,
+ * /api/v1/payments, /api/v1/settings, the history of its records (Invoice, Payment, Setting) and the attachments of
+ * invoices (listed and uploaded with {@code ownerType=INVOICE}; read and deleted by id in the monolith, whose
+ * attachment table and files finance shares); the monolith the rest of the API and its docs.
  */
 @Configuration
 public class GatewayRoutes {
@@ -31,6 +33,14 @@ public class GatewayRoutes {
                         .path("/api/v1/masterdata/**", "/api/v1/audit/Material/**", "/api/v1/audit/Supplier/**",
                                 "/api/v1/audit/Category/**")
                         .uri(gateway.masterDataUri()))
+                .route("finance", route -> route.order(-1)
+                        .path("/api/v1/invoices", "/api/v1/invoices/**", "/api/v1/payments", "/api/v1/payments/**",
+                                "/api/v1/settings", "/api/v1/settings/**", "/api/v1/audit/Invoice/**",
+                                "/api/v1/audit/Payment/**", "/api/v1/audit/Setting/**")
+                        .uri(gateway.financeUri()))
+                .route("finance-attachments", route -> route.order(-1)
+                        .path("/api/v1/attachments").and().query("ownerType", "INVOICE")
+                        .uri(gateway.financeUri()))
                 .route("api", route -> route.path("/api/**").uri(gateway.backendUri()))
                 .route("api-docs", route -> route.path("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**")
                         .uri(gateway.backendUri()))

@@ -2,11 +2,7 @@ package com.materia.backend.domain;
 
 import com.materia.backend.contexts.goodsReceipt.application.services.GoodsReceiptCodeGeneratorService;
 import com.materia.backend.contexts.goodsReceipt.domain.valueObjects.ReceiptCode;
-import com.materia.backend.contexts.invoice.application.services.InvoiceCodeGeneratorService;
-import com.materia.backend.contexts.invoice.domain.valueObjects.InvoiceCode;
 import com.materia.backend.common.domain.ports.out.CodeSequenceRepository;
-import com.materia.backend.contexts.payment.application.services.PaymentCodeGeneratorService;
-import com.materia.backend.contexts.payment.domain.valueObjects.PaymentCode;
 import com.materia.backend.contexts.purchaseOrder.application.services.PurchaseOrderCodeGeneratorService;
 import com.materia.backend.contexts.purchaseOrder.domain.valueObjects.OrderCode;
 import com.materia.backend.contexts.purchaseRequisition.application.services.RequisitionCodeGeneratorService;
@@ -72,21 +68,13 @@ class YearBasedCodeGenerationTest {
     }
 
     @Test
-    @DisplayName("ReceiptCode, InvoiceCode, PaymentCode, ReturnCode validate year formats")
+    @DisplayName("ReceiptCode and ReturnCode validate year formats")
     void testOtherCodes() {
         int currentYear = Year.now().getValue();
 
         ReceiptCode gr = ReceiptCode.of("GR-" + currentYear + "-0001");
         assertEquals("GR", gr.getPrefix());
         assertEquals(currentYear, gr.getYear());
-
-        InvoiceCode inv = InvoiceCode.of("INV-" + currentYear + "-0001");
-        assertEquals("INV", inv.getPrefix());
-        assertEquals(currentYear, inv.getYear());
-
-        PaymentCode pay = PaymentCode.of("PAY-" + currentYear + "-0001");
-        assertEquals("PAY", pay.getPrefix());
-        assertEquals(currentYear, pay.getYear());
 
         ReturnCode rtn = ReturnCode.of("RTN-" + currentYear + "-0001");
         assertEquals("RTN", rtn.getPrefix());
@@ -116,14 +104,6 @@ class YearBasedCodeGenerationTest {
         GoodsReceiptCodeGeneratorService grService = new GoodsReceiptCodeGeneratorService(repo);
         ReceiptCode gr1 = grService.generateCode();
         assertEquals(String.format("GR-%d-0001", currentYear), gr1.getValue());
-
-        InvoiceCodeGeneratorService invService = new InvoiceCodeGeneratorService(repo);
-        InvoiceCode inv1 = invService.generateCode();
-        assertEquals(String.format("INV-%d-0001", currentYear), inv1.getValue());
-
-        PaymentCodeGeneratorService payService = new PaymentCodeGeneratorService(repo);
-        PaymentCode pay1 = payService.generateCode();
-        assertEquals(String.format("PAY-%d-0001", currentYear), pay1.getValue());
 
         ReturnToVendorCodeGeneratorService rtvService = new ReturnToVendorCodeGeneratorService(repo);
         ReturnCode rtv1 = rtvService.generateCode();

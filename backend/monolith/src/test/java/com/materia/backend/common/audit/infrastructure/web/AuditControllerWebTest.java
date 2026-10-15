@@ -70,9 +70,9 @@ class AuditControllerWebTest extends AbstractWebMvcTest {
     @DisplayName("history: an auditor (log:read) may read the history of any record")
     @WithMockUser(authorities = "log:read")
     void history_auditor() throws Exception {
-        when(reader.historyOf(eq("Invoice"), any(), anyInt())).thenReturn(List.of());
+        when(reader.historyOf(eq("PurchaseOrder"), any(), anyInt())).thenReturn(List.of());
 
-        mockMvc.perform(get(BASE + "/Invoice/" + UUID.randomUUID())).andExpect(status().isOk());
+        mockMvc.perform(get(BASE + "/PurchaseOrder/" + UUID.randomUUID())).andExpect(status().isOk());
     }
 
     @Test

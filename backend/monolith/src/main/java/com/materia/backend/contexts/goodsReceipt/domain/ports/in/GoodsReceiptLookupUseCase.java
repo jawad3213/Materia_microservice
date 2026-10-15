@@ -13,4 +13,7 @@ public interface GoodsReceiptLookupUseCase {
 
     /** Every receipt of the order, whatever its status. */
     List<GoodsReceiptView> findReceiptsForOrder(String purchaseOrderId);
+
+    /** Validated receipts (completed or partial), by receipt code, at most {@code limit}. */
+    List<GoodsReceiptView> findValidatedReceipts(int limit);
 }

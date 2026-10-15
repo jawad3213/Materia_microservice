@@ -68,10 +68,10 @@ health() {
   [ -n "$id" ] && docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id"
 }
 
-# The backend, then identity and master data (which start once the backend is healthy)
+# The backend, then identity, master data and finance (which start once the backend is healthy)
 wait_healthy() {
   local service
-  for service in backend identity masterdata; do
+  for service in backend identity masterdata finance; do
     for _ in $(seq 1 60); do
       case "$(health "$service" || true)" in
         healthy) continue 2 ;;
@@ -96,7 +96,7 @@ start() {
 
 report_images() {
   local service id image
-  for service in backend identity masterdata gateway frontend; do
+  for service in backend identity masterdata finance gateway frontend; do
     id="$(docker compose ps -q "$service")"
     [ -n "$id" ] || continue
     image="$(docker inspect --format '{{.Image}}' "$id")"
@@ -106,7 +106,7 @@ report_images() {
 
 [ -f .bootstrapped ] || { log "Host bootstrap has not finished yet"; exit 1; }
 
-# Attachment files: owned by the backend container user (uid 10001, see backend/monolith/Dockerfile)
+# Attachment files: owned by the backend container user, which finance shares (uid 10001, see backend/monolith/Dockerfile)
 install -d -m 750 -o 10001 -g 10001 /data/attachments
 # Monitoring data, owned by the users the images run as (Prometheus: nobody, Grafana: 472)
 install -d -m 750 -o 65534 -g 65534 /data/prometheus

@@ -6,6 +6,8 @@ import com.materia.grpc.convert.ProtoValues;
 import com.materia.proto.procurement.v1.FindReceiptRequest;
 import com.materia.proto.procurement.v1.FindReceiptResponse;
 import com.materia.proto.procurement.v1.FindReceiptsForOrderRequest;
+import com.materia.proto.procurement.v1.FindValidatedReceiptsRequest;
+import com.materia.proto.procurement.v1.FindValidatedReceiptsResponse;
 import com.materia.proto.procurement.v1.FindReceiptsForOrderResponse;
 import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
 import io.grpc.stub.StreamObserver;
@@ -41,6 +43,15 @@ public class GoodsReceiptLookupGrpcService extends GoodsReceiptLookupGrpc.GoodsR
         response.onCompleted();
     }
 
+    @Override
+    public void findValidatedReceipts(FindValidatedReceiptsRequest request,
+                                      StreamObserver<FindValidatedReceiptsResponse> response) {
+        FindValidatedReceiptsResponse.Builder reply = FindValidatedReceiptsResponse.newBuilder();
+        receipts.findValidatedReceipts(request.getLimit()).forEach(receipt -> reply.addReceipts(toProto(receipt)));
+        response.onNext(reply.build());
+        response.onCompleted();
+    }
+
     static com.materia.proto.procurement.v1.GoodsReceiptView toProto(GoodsReceiptView receipt) {
         com.materia.proto.procurement.v1.GoodsReceiptView.Builder proto =
                 com.materia.proto.procurement.v1.GoodsReceiptView.newBuilder()
@@ -52,6 +63,7 @@ public class GoodsReceiptLookupGrpcService extends GoodsReceiptLookupGrpc.GoodsR
         if (receipt.purchaseOrderCode() != null) proto.setPurchaseOrderCode(receipt.purchaseOrderCode());
         if (receipt.supplierId() != null) proto.setSupplierId(receipt.supplierId());
         if (receipt.supplierName() != null) proto.setSupplierName(receipt.supplierName());
+        if (receipt.receiptDate() != null) proto.setReceiptDate(receipt.receiptDate().toString());
         if (receipt.lines() != null) receipt.lines().forEach(line -> proto.addLines(toProto(line)));
         return proto.build();
     }

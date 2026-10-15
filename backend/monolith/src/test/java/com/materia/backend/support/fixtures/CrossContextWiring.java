@@ -6,13 +6,7 @@ import com.materia.backend.contexts.goodsReceipt.domain.ports.out.OrderedGoods;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.out.ReceivedStock;
 import com.materia.backend.contexts.goodsReceipt.infrastructure.adapters.out.purchaseOrder.PurchaseOrderGoodsAdapter;
 import com.materia.backend.contexts.goodsReceipt.infrastructure.adapters.out.stock.MaterialReceivedStock;
-import com.materia.backend.contexts.invoice.domain.ports.out.InvoicedOrders;
-import com.materia.backend.contexts.invoice.infrastructure.adapters.out.procurement.ProcurementInvoicedOrders;
-import com.materia.backend.contexts.goodsReceipt.infrastructure.adapters.in.grpc.GoodsReceiptLookupGrpcService;
-import com.materia.backend.contexts.purchaseOrder.infrastructure.adapters.in.grpc.PurchaseOrderLookupGrpcService;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
-import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
-import com.materia.proto.procurement.v1.PurchaseOrderLookupGrpc;
 import com.materia.backend.contexts.purchaseOrder.application.services.PurchaseOrderLookupService;
 import com.materia.backend.contexts.purchaseOrder.application.services.PurchaseOrderReceivingService;
 import com.materia.backend.contexts.purchaseOrder.domain.events.PurchaseOrderConfirmedEvent;
@@ -66,15 +60,6 @@ public final class CrossContextWiring {
     public static ReceivedStock receivedStockOver(TestMaterialCatalog materials, InlineEvents events) {
         TestStockKeeper.on(events, materials);
         return new MaterialReceivedStock(materialStub(materials), events);
-    }
-
-    /** The invoice context's view of the orders in {@code orders} and the receipts in {@code receipts}. */
-    public static InvoicedOrders invoicedOrdersOver(PurchaseOrderRepository orders, GoodsReceiptRepository receipts) {
-        return new ProcurementInvoicedOrders(
-                PurchaseOrderLookupGrpc.newBlockingStub(InProcessGrpc.serving(
-                        new PurchaseOrderLookupGrpcService(new PurchaseOrderLookupService(orders)))),
-                GoodsReceiptLookupGrpc.newBlockingStub(InProcessGrpc.serving(
-                        new GoodsReceiptLookupGrpcService(new GoodsReceiptLookupService(receipts)))));
     }
 
     /**

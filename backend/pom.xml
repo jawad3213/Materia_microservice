@@ -33,6 +33,8 @@
         <module>identity-service</module>
         <!-- Master data: materials, categories, suppliers and stock. -->
         <module>masterdata-service</module>
+        <!-- Finance: invoices, payments and their settings. -->
+        <module>finance-service</module>
         <!-- The API gateway: the only way in from outside, in front of the services. -->
         <module>gateway-service</module>
     </modules>

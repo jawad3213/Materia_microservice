@@ -64,6 +64,21 @@ services:
           memory: 256M
 
   # -----------------------------------------------------------------
+  # Finance (Prod: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  finance:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  # -----------------------------------------------------------------
   # Gateway: reached by the frontend's nginx only
   # -----------------------------------------------------------------
   gateway:

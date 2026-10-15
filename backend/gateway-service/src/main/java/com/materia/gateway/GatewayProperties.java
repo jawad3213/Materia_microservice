@@ -8,12 +8,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param backendUri    the monolith: the REST API no extracted service answers
  * @param identityUri   Identity (sign-in, accounts, employees, the token key); the monolith when not set
  * @param masterDataUri Master data (materials, categories, suppliers); the monolith when not set
+ * @param financeUri    Finance (invoices, payments, settings); the monolith when not set
  * @param jwksUri       Identity's published token key (JWK set); Identity's own when not set
  * @param rateLimit     per-client request budgets
  */
 @ConfigurationProperties(prefix = "gateway")
-public record GatewayProperties(String backendUri, String identityUri, String masterDataUri, String jwksUri,
-                                RateLimit rateLimit) {
+public record GatewayProperties(String backendUri, String identityUri, String masterDataUri, String financeUri,
+                                String jwksUri, RateLimit rateLimit) {
 
     public GatewayProperties {
         if (backendUri == null || backendUri.isBlank()) {
@@ -21,6 +22,7 @@ public record GatewayProperties(String backendUri, String identityUri, String ma
         }
         if (identityUri == null || identityUri.isBlank()) identityUri = backendUri;
         if (masterDataUri == null || masterDataUri.isBlank()) masterDataUri = backendUri;
+        if (financeUri == null || financeUri.isBlank()) financeUri = backendUri;
         if (jwksUri == null || jwksUri.isBlank()) jwksUri = identityUri + "/.well-known/jwks.json";
         if (rateLimit == null) rateLimit = new RateLimit(true, 120, 10, 60);
     }

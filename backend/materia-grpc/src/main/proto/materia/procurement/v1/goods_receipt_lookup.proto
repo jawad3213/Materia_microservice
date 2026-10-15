@@ -12,6 +12,7 @@ option java_multiple_files = true;
 service GoodsReceiptLookup {
   rpc FindReceipt(FindReceiptRequest) returns (FindReceiptResponse);
   rpc FindReceiptsForOrder(FindReceiptsForOrderRequest) returns (FindReceiptsForOrderResponse);
+  rpc FindValidatedReceipts(FindValidatedReceiptsRequest) returns (FindValidatedReceiptsResponse);
 }
 
 message FindReceiptRequest {
@@ -33,6 +34,15 @@ message FindReceiptsForOrderResponse {
 }
 
 // goodsReceipt's GoodsReceiptView
+message FindValidatedReceiptsRequest {
+  int32 limit = 1;
+}
+
+message FindValidatedReceiptsResponse {
+  // Completed or partial receipts, by receipt code
+  repeated GoodsReceiptView receipts = 1;
+}
+
 message GoodsReceiptView {
   string id = 1;
   optional string receipt_code = 2;
@@ -43,6 +53,8 @@ message GoodsReceiptView {
   optional string supplier_id = 7;
   optional string supplier_name = 8;
   repeated Line lines = 9;
+  // ISO date the goods arrived; absent on a draft
+  optional string receipt_date = 10;
 
   message Line {
     string id = 1;

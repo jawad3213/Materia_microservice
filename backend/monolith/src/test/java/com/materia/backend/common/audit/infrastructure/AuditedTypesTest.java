@@ -16,12 +16,12 @@ class AuditedTypesTest {
     void readPermissions_comeFromTheAnnotations() {
         assertEquals(Optional.of(Optional.of("order:read")), AuditedTypes.readPermissionOf("PurchaseOrder"));
         assertEquals(Optional.of(Optional.of("requisition:read")), AuditedTypes.readPermissionOf("Requisition"));
-        assertEquals(Optional.of(Optional.of("setting:read")), AuditedTypes.readPermissionOf("Setting"));
         assertEquals(Optional.of(Optional.empty()), AuditedTypes.readPermissionOf("Attachment"), "log:read only");
         assertTrue(AuditedTypes.readPermissionOf("PurchaseOrderLine").isEmpty(), "lines are read with their document");
         assertTrue(AuditedTypes.readPermissionOf("Nonsense").isEmpty());
         assertTrue(AuditedTypes.readPermissionOf("Employee").isEmpty(), "identity's records: identity serves them");
         assertTrue(AuditedTypes.readPermissionOf("Material").isEmpty(), "master data's records: master data serves them");
+        assertTrue(AuditedTypes.readPermissionOf("Invoice").isEmpty(), "finance's records: finance serves them");
     }
 
     @Test
