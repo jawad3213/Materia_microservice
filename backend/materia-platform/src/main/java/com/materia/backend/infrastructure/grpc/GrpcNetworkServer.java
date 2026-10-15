@@ -1,6 +1,7 @@
 package com.materia.backend.infrastructure.grpc;
 
 import com.materia.grpc.auth.AuthenticationServerInterceptor;
+import com.materia.grpc.auth.AuthorizationServerInterceptor;
 import com.materia.grpc.auth.TokenVerifier;
 import com.materia.grpc.errors.ExceptionTranslatingServerInterceptor;
 import com.materia.grpc.trace.TraceIdServerInterceptor;
@@ -20,9 +21,9 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Serves a service's gRPC contracts to the other services on a network port, with the interceptors every service
- * installs (trace id, then authentication, then error translation around the handler). Every call needs a valid
- * token, except the methods listed as open (identity's service-token issuing). Created by each service's gRPC
- * configuration.
+ * installs (trace id, then authentication, then authorization, then error translation around the handler). Every call
+ * needs a valid token, except the methods listed as open (identity's service-token issuing), and must be allowed by
+ * its RPC's policy (GrpcPolicies). Created by each service's gRPC configuration.
  */
 public class GrpcNetworkServer implements SmartLifecycle {
 
@@ -37,9 +38,12 @@ public class GrpcNetworkServer implements SmartLifecycle {
         this.name = name;
         AuthenticationServerInterceptor authentication = new AuthenticationServerInterceptor(verifier, openMethods);
         NettyServerBuilder builder = NettyServerBuilder.forPort(port);
-        // The last interceptor runs first: trace id, then authentication, then error translation around the handler.
+        AuthorizationServerInterceptor authorization = new AuthorizationServerInterceptor();
+        // The last interceptor runs first: trace id, authentication, authorization, then error translation around the
+        // handler.
         services.forEach(service -> builder.addService(ServerInterceptors.intercept(service,
-                new ExceptionTranslatingServerInterceptor(), authentication, new TraceIdServerInterceptor())));
+                new ExceptionTranslatingServerInterceptor(), authorization, authentication,
+                new TraceIdServerInterceptor())));
         this.server = builder.build();
     }
 

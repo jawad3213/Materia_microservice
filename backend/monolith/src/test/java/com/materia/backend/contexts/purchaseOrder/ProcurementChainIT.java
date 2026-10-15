@@ -22,7 +22,17 @@ import com.materia.backend.contexts.purchaseRequisition.domain.enums.Requisition
 import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.RequisitionBusinessException;
 import com.materia.backend.contexts.purchaseRequisition.domain.ports.out.RequisitionRepository;
 import com.materia.backend.support.AbstractIntegrationTest;
+import com.materia.backend.contexts.purchaseRequisition.infrastructure.adapters.in.grpc.ReplenishmentGrpcService;
+import com.materia.backend.gateway.security.JwtTokenProvider;
+import com.materia.backend.infrastructure.grpc.JwtTokenVerifier;
+import com.materia.grpc.auth.AuthenticationServerInterceptor;
+import com.materia.grpc.auth.AuthorizationServerInterceptor;
+import com.materia.grpc.auth.CallerTokenClientInterceptor;
+import com.materia.grpc.errors.ExceptionTranslatingServerInterceptor;
 import com.materia.proto.procurement.v1.RaiseReplenishmentRequest;
+import io.grpc.ServerInterceptors;
+import io.grpc.inprocess.InProcessChannelBuilder;
+import io.grpc.inprocess.InProcessServerBuilder;
 import com.materia.proto.procurement.v1.ReplenishmentGrpc;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -47,8 +57,8 @@ class ProcurementChainIT extends AbstractIntegrationTest {
 
     @Autowired private RequisitionService requisitionService;
     @Autowired private RequisitionRepository requisitions;
-    /** procurement.v1.Replenishment, which master data calls for a manual reorder ("1-click"). */
-    @Autowired private ReplenishmentGrpc.ReplenishmentBlockingStub replenishment;
+    @Autowired private ReplenishmentGrpcService replenishmentService;
+    @Autowired private JwtTokenProvider jwt;
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private TestMasterData materials;
@@ -58,6 +68,27 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     private void flushAndClear() {
         em.flush();
         em.clear();
+    }
+
+    /**
+     * procurement.v1.Replenishment as master data calls it: behind the servers' authentication and authorization,
+     * with master data's service token. In process and on the caller's thread, so the call joins the test's
+     * transaction.
+     */
+    private ReplenishmentGrpc.ReplenishmentBlockingStub masterDataReplenishment() {
+        String name = InProcessServerBuilder.generateName();
+        try {
+            InProcessServerBuilder.forName(name).directExecutor()
+                    .addService(ServerInterceptors.intercept(replenishmentService,
+                            new ExceptionTranslatingServerInterceptor(), new AuthorizationServerInterceptor(),
+                            new AuthenticationServerInterceptor(new JwtTokenVerifier(jwt))))
+                    .build().start();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+        String token = jwt.generateServiceToken("masterdata");
+        return ReplenishmentGrpc.newBlockingStub(InProcessChannelBuilder.forName(name).directExecutor()
+                .intercept(new CallerTokenClientInterceptor(() -> java.util.Optional.of(token))).build());
     }
 
     private TestMaterial material() {
@@ -148,8 +179,8 @@ class ProcurementChainIT extends AbstractIntegrationTest {
         TestAccount buyer = users.save(aPurchaser().firstName("Bea").lastName("Buyer").build());
 
         String autoCode = requisitionService.createRequisitionFromReorder(snapshotOf(auto), 10, "Below safety stock", true);
-        // Master data's manual reorder: a replenishment raised for the buyer.
-        replenishment.raiseReplenishment(RaiseReplenishmentRequest.newBuilder()
+        // Master data's manual reorder: a replenishment raised for the buyer, with master data's service token.
+        masterDataReplenishment().raiseReplenishment(RaiseReplenishmentRequest.newBuilder()
                 .setMaterialId(manual.getId().toString())
                 .setQuantity(7)
                 .setReason("Customer rush")

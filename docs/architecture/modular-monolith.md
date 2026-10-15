@@ -124,8 +124,18 @@ Interceptors every service installs (`materia-grpc`):
 |---|---|---|
 | Client | `CallerTokenClientInterceptor` | Sends the user's token, so the called service applies that user's rights. |
 | Client | `TraceIdClientInterceptor` | Sends the trace id of the request being served. |
-| Client | `DefaultDeadlineClientInterceptor` | Gives a call without a deadline a default one: 30 s in process (`app.grpc.client.deadline`; the call runs on the caller's thread, so a deadline cannot stop it early), a few seconds on the network channels of extracted services. |
+| Client | `DefaultDeadlineClientInterceptor` | Gives a call without a deadline a default one: a few seconds (`app.grpc.<service>.deadline`). |
 | Server | `AuthenticationServerInterceptor` | Refuses a call without a valid token (`UNAUTHENTICATED`) and exposes the caller (`GrpcCaller`). |
+| Server | `AuthorizationServerInterceptor` | Refuses a call its caller may not make (`PERMISSION_DENIED`), by the RPC's policy in `GrpcPolicies`; an RPC without a policy is refused. |
+
+**Who may call each RPC (`GrpcPolicies`).** Part of the contracts, like the .proto files; `GrpcPoliciesTest` fails when
+an RPC has no policy. A policy names the user permissions that may call the RPC (users reach it with their own token,
+forwarded by the service serving their request) and the services that may call it with their service token (work no
+user started: jobs, event handlers, seeding; `service:<client id>`). A read RPC asks for the permission that reads the
+same data over the REST API, so a call never shows a user more than the REST API would; a write RPC (raising a
+replenishment) for the permissions of the actions that lead to it. Only issuing a service token is open; the account
+directory (`identity.v1.UserDirectory`) admits any authenticated caller, since every service shows who did what.
+`DashboardAccessPolicyTest` checks every role's dashboard only asks for figures its role may read.
 | Server | `TraceIdServerInterceptor` | Logs the call under the caller's trace id. |
 | Server | `ExceptionTranslatingServerInterceptor` | Turns the shared exceptions into status codes; `GrpcErrors.toException` turns them back on the client. |
 
@@ -228,8 +238,6 @@ raises replenishment requisitions in procurement with a command (`procurement.v1
   services and their tests do not change.
 - `RequisitionOutput.getLines()` still exposes requisition entities to the requisition web layer; other
   contexts must use `getLineSummaries()`.
-- **Authorisation per RPC.** A gRPC call needs a valid token, but any authenticated caller may call any RPC; the
-  REST API enforces the permissions today. Check them per RPC before a service is reachable from the network.
 - **The dashboard's metrics** cross services through 32 fine-grained RPCs. When analytics is extracted, measure how
   many a dashboard load makes; an event-fed read model in analytics can replace the hottest ones.
 - **Dev seeders** call other contexts directly; each service will seed its own data.
