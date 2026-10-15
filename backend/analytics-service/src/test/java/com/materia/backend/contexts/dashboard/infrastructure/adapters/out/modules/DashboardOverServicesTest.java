@@ -1,5 +1,6 @@
-package com.materia.backend.contexts.dashboard.infrastructure.adapters.out.persistence;
+package com.materia.backend.contexts.dashboard.infrastructure.adapters.out.modules;
 
+import com.materia.backend.common.application.metrics.CountedAmount;
 import com.materia.backend.common.application.metrics.RecentDocument;
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.fx.FxDocument;
@@ -8,22 +9,20 @@ import com.materia.backend.common.domain.fx.ReportingFx;
 import com.materia.backend.contexts.dashboard.application.dtos.DashboardOutput;
 import com.materia.backend.contexts.dashboard.application.dtos.DashboardOutput.Kpi;
 import com.materia.backend.contexts.dashboard.application.services.DashboardService;
-import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel;
-import com.materia.backend.support.AbstractIntegrationTest;
-import com.materia.backend.support.fixtures.TestFinance;
+import com.materia.backend.support.fixtures.InProcessGrpc;
 import com.materia.backend.support.fixtures.TestFinanceMetrics;
-import com.materia.backend.support.fixtures.TestMasterData;
 import com.materia.backend.support.fixtures.TestMasterDataMetrics;
-import org.junit.jupiter.api.AfterEach;
+import com.materia.backend.support.fixtures.TestProcurementMetrics;
+import com.materia.backend.support.fixtures.TestProcurementMetrics.MaterialSpend;
+import com.materia.backend.support.fixtures.TestProcurementMetrics.Totals;
+import com.materia.proto.finance.v1.FinanceMetricsGrpc;
+import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
+import com.materia.proto.procurement.v1.ProcurementMetricsGrpc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,12 +40,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The dashboard computed by the database: one scenario of every document type, checked figure by figure.
- *
- * <p>The test runs in a transaction that is rolled back. It first empties the document and material tables (inside
- * that transaction), so documents other tests committed to the shared database cannot change the totals.
+ * The dashboard composed from the other services' figures, read through their contracts (procurement.v1, finance.v1,
+ * masterdata.v1) as in production: one scenario of every document type, checked figure by figure. How each service
+ * computes its figures is its own tests' business (ProcurementMetricsIT, FinanceMetricsIT, JpaMaterialMetricsIT, on
+ * the same scenario); this test checks what the dashboard makes of them.
  */
-class DashboardReadModelIT extends AbstractIntegrationTest {
+class DashboardOverServicesTest {
 
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 15);
     private static final Set<String> ADMIN = Set.of("requisition:read", "order:read", "receipt:read", "invoice:read",
@@ -54,14 +53,12 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
     private static final Set<String> RECEIVER = Set.of("requisition:read", "order:read", "receipt:read", "return:read",
             "material:read", "dashboard:read");
 
-    @Autowired private JdbcTemplate jdbc;
-    @Autowired private DashboardReadModel readModel;
-    @Autowired private TestMasterData masterData;
-    @Autowired private TestFinance finance;
-
-    private DashboardService service;
+    private final TestProcurementMetrics procurement = new TestProcurementMetrics();
+    private final TestFinanceMetrics finance = new TestFinanceMetrics();
+    private final TestMasterDataMetrics masterData = new TestMasterDataMetrics();
     private final StubFx fx = new StubFx();
-    private UUID eurOrder;
+    private DashboardService service;
+
     private final UUID acme = UUID.randomUUID();
     private final UUID globex = UUID.randomUUID();
     private final UUID bolts = UUID.randomUUID();
@@ -70,65 +67,59 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
     @BeforeEach
     void scenario() {
         Clock clock = Clock.fixed(TODAY.atTime(10, 0).atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
-        service = new DashboardService(readModel, fx, clock);
+        service = new DashboardService(new ModuleMetricsReadModel(
+                ProcurementMetricsGrpc.newBlockingStub(InProcessGrpc.serving(procurement)),
+                FinanceMetricsGrpc.newBlockingStub(InProcessGrpc.serving(finance)),
+                MasterDataMetricsGrpc.newBlockingStub(InProcessGrpc.serving(masterData))), fx, clock);
         fx.rates.put(CurrencyCode.EUR, new FxValuation(CurrencyCode.EUR, CurrencyCode.MAD, bd("10.80"), TODAY, FxValuation.LIVE));
-        emptyDocumentTables();
 
-        // Master data's answers (its catalogue: MAT-1 Bolts and MAT-5 Screws are fasteners, MAT-2 Paint a coating;
-        // MAT-1, MAT-2 and MAT-3 Glue are below their reorder point, MAT-4 is obsolete): how it picks them is its own
-        // tests' business (JpaMaterialMetricsIT), what the dashboard makes of them is this test's.
-        UUID screws = UUID.randomUUID();
+        // Procurement: requisitions (2 submitted, 1 approved); orders from Acme (1000.00 confirmed, expected yesterday;
+        // 500.00 completed in August) and Globex (300.00 ready for receipt, 999.00 cancelled, 80.00 EUR confirmed and
+        // valued at the 11.00 of its own date); two validated receipts from Acme (10 received, 8 accepted, today and
+        // late; 10 of 10 last month, on time); returns (1 with the supplier, 1 draft).
+        procurement
+                .requisitions(Map.of("SUBMITTED", 2L, "APPROVED", 1L))
+                .orderCurrencies(Map.of("MAD", 4L, "EUR", 1L), Map.of("EUR", 1L))
+                .openOrders(3, 1, "2180.00")
+                .ordered(List.of(month("2026-08", "500.00"), month("2026-10", "2180.00")))
+                .ordersByStatus(lifecycle("CONFIRMED", 2L, "READY_FOR_RECEIPT", 1L, "COMPLETED", 1L, "CANCELLED", 1L))
+                .spend(List.of(new MaterialSpend(bolts, "MAT-1", 2, "1500.00"), new MaterialSpend(null, "MAT-2", 3, "1180.00")),
+                        List.of(new CountedAmount(acme.toString(), "Acme", 2, bd("1500.00")),
+                                new CountedAmount(globex.toString(), "Globex", 2, bd("1180.00"))))
+                .receipts(1, 1, new Totals(2, 20, 18, 2, 2, 1), Map.of(acme, new Totals(2, 20, 18, 2, 2, 1)))
+                .returns(Map.of("PENDING", 1L, "DRAFT", 1L))
+                .latest(List.of(document("REQ", TODAY.atTime(8, 0)), document("REQ", TODAY.atTime(7, 0)),
+                                document("REQ", TODAY.atTime(6, 0))),
+                        List.of(document("PO", TODAY.minusDays(2).atStartOfDay()), document("PO", TODAY.minusDays(3).atStartOfDay()),
+                                document("PO", TODAY.minusDays(9).atStartOfDay()), document("PO", TODAY.minusDays(10).atStartOfDay()),
+                                document("PO", TODAY.minusMonths(2).atStartOfDay())),
+                        List.of(document("GR", TODAY.atStartOfDay()), document("GR", TODAY.minusDays(20).atStartOfDay()),
+                                document("GR", TODAY.minusMonths(1).atStartOfDay())),
+                        List.of(document("RTN", TODAY.minusDays(20).atStartOfDay()), document("RTN", TODAY.minusDays(20).atStartOfDay())));
+
+        // Master data: MAT-1 Bolts and MAT-5 Screws are fasteners, MAT-2 Paint a coating; MAT-2, MAT-3 Glue and MAT-1
+        // are below their reorder point, most urgent first.
         UUID paint = UUID.randomUUID();
-        masterData.metrics().answer(
+        masterData.answer(
                 List.of(new TestMasterDataMetrics.Alert(paint.toString(), "MAT-2", "Paint", 0, 5, null),
                         new TestMasterDataMetrics.Alert(UUID.randomUUID().toString(), "MAT-3", "Glue", 1, 4, 2),
                         new TestMasterDataMetrics.Alert(bolts.toString(), "MAT-1", "Bolts", 8, 10, null)),
-                Map.of(bolts.toString(), "Fasteners", paint.toString(), "Coatings", screws.toString(), "Fasteners"),
+                Map.of(bolts.toString(), "Fasteners", paint.toString(), "Coatings"),
                 Map.of("MAT-1", "Fasteners", "MAT-2", "Coatings", "MAT-5", "Fasteners"));
 
-        requisition("SUBMITTED", 1);
-        requisition("SUBMITTED", 2);
-        requisition("APPROVED", 3);
-
-        UUID confirmed = order(acme, "Acme", "CONFIRMED", "1000.00", "MAD", TODAY.minusDays(3), TODAY.minusDays(1), bolts, "MAT-1");
-        order(acme, "Acme", "COMPLETED", "500.00", "MAD", TODAY.minusMonths(2), TODAY.minusMonths(1), bolts, "MAT-1");
-        UUID ready = order(globex, "Globex", "READY_FOR_RECEIPT", "300.00", "MAD", TODAY.minusDays(10), TODAY.plusDays(5), null, "MAT-2");
-        order(globex, "Globex", "CANCELLED", "999.00", "MAD", TODAY.minusDays(9), null, null, "MAT-2");
-        eurOrder = order(globex, "Globex", "CONFIRMED", "80.00", "EUR", TODAY.minusDays(2), null, null, "MAT-2");
-        // Confirmed, so it carries the rate of its own date (11.00), which differs from the latest rate (10.80).
-        valued("purchase_orders", eurOrder, "11.00", "MAD");
-
-        receipt(confirmed, acme, "COMPLETED", 10, 8, TODAY.minusDays(1), TODAY);
-        receipt(confirmed, acme, "PARTIAL", 10, 10, TODAY.minusMonths(1), TODAY.minusMonths(1));
-        receipt(ready, globex, "DRAFT", 5, 5, null, null);
-
-        // Finance's answers for its documents: a verified invoice of 400.00 issued a month ago and due 40 days ago, a
-        // submitted one of 200.00 (50.00 paid) due in 10 days, a credit note of 50.00 this month, an invoice of 100.00
-        // paid in July; payments of 250.00 this month and 100.00 last month, executed, and one of 75.00 to execute. How
-        // finance computes them is its own tests' business (FinanceMetricsIT); what the dashboard makes of them is this
-        // test's.
-        finance.metrics()
+        // Finance: a verified invoice of 400.00 due 40 days ago, a submitted one of 200.00 (50.00 paid) due in 10 days,
+        // a credit note of 50.00 this month, an invoice of 100.00 paid in July; payments of 250.00 this month and 100.00
+        // last month, executed, and one of 75.00 to execute.
+        finance
                 .outstanding(List.of(
                         new TestFinanceMetrics.DueGroup(TODAY.minusDays(40), "MAD", 1, "400.00"),
                         new TestFinanceMetrics.DueGroup(TODAY.plusDays(10), "MAD", 1, "150.00")))
                 .invoiced(List.of(month("2026-07", "100.00"), month("2026-09", "400.00"), month("2026-10", "150.00")))
                 .paid(List.of(month("2026-09", "100.00"), month("2026-10", "250.00")))
                 .pendingPayments(1)
-                .latest(List.of(document("INV", TODAY.minusDays(1)), document("INV", TODAY.minusDays(5)),
-                                document("INV", TODAY.minusDays(30)), document("INV", TODAY.minusMonths(3))),
-                        List.of(document("PAY", LocalDate.of(2026, 1, 1)), document("PAY", LocalDate.of(2026, 1, 1)),
-                                document("PAY", LocalDate.of(2026, 1, 1))))
+                .latest(List.of(document("INV", TODAY.minusDays(1).atStartOfDay()), document("INV", TODAY.minusDays(5).atStartOfDay())),
+                        List.of(document("PAY", LocalDateTime.of(2026, 1, 1, 0, 0))))
                 .documents(Map.of("MAD", 4L), Map.of("MAD", 3L));
-
-        returnToVendor("PENDING");
-        returnToVendor("DRAFT");
-    }
-
-    /** The stand-ins are shared by every test of the JVM. */
-    @AfterEach
-    void noOtherServicesAnswers() {
-        masterData.metrics().answer(List.of(), Map.of(), Map.of());
-        finance.metrics().reset();
     }
 
     // ---- Tests ----
@@ -150,21 +141,20 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("currency: without its own copy, or with one made for another reporting currency, the latest rate is used")
+    @DisplayName("currency: without its own copy, the latest rate values the document, and the dashboard says so")
     void currency_latestRateWithoutCopy() {
-        jdbc.update("update purchase_orders set fx_rate_to_reporting = null, fx_reporting_currency = null where id = ?", eurOrder);
-        assertEquals(0, bd("2164.00").compareTo(byKey(service.getOverview(ADMIN)).get("openOrders").value()), "80 x 10.80");
+        procurement.orderCurrencies(Map.of("MAD", 4L, "EUR", 1L), Map.of()).openOrders(3, 1, "2164.00");
 
-        valued("purchase_orders", eurOrder, "1.08", "USD");
         DashboardOutput out = service.getOverview(ADMIN);
-        assertEquals(0, bd("2164.00").compareTo(byKey(out).get("openOrders").value()), "a USD copy is ignored");
+
+        assertEquals(0, bd("2164.00").compareTo(byKey(out).get("openOrders").value()), "80 x 10.80");
         assertEquals(0, out.conversion().currencies().get(0).valuedAtDocumentDate());
     }
 
     @Test
     @DisplayName("currency: a currency with no rate at all is left out, counted and explained")
     void currency_noRateLeftOut() {
-        jdbc.update("update purchase_orders set fx_rate_to_reporting = null, fx_reporting_currency = null where id = ?", eurOrder);
+        procurement.orderCurrencies(Map.of("MAD", 4L, "EUR", 1L), Map.of()).openOrders(3, 1, "1300.00");
         fx.rates.clear();
 
         DashboardOutput out = service.getOverview(ADMIN);
@@ -185,28 +175,28 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
         assertEquals("3 order(s), 1 late", kpis.get("openOrders").hint());
         assertEquals("red", kpis.get("openOrders").tone());
         assertEquals(0, bd("1").compareTo(kpis.get("receiptsThisMonth").value()));
-        assertEquals(0, bd("550.00").compareTo(kpis.get("invoicesToPay").value()), "credit notes and paid invoices excluded");
+        assertEquals(0, bd("550.00").compareTo(kpis.get("invoicesToPay").value()));
         assertTrue(kpis.get("invoicesToPay").hint().startsWith("1 overdue: 400.00"), kpis.get("invoicesToPay").hint());
         assertEquals(0, bd("250.00").compareTo(kpis.get("paidThisMonth").value()));
         assertEquals("1 payment(s) prepared, to execute", kpis.get("paidThisMonth").hint());
-        assertEquals(0, bd("3").compareTo(kpis.get("stockAlerts").value()), "the obsolete material is not an alert");
+        assertEquals(0, bd("3").compareTo(kpis.get("stockAlerts").value()));
         assertEquals("1 out of stock", kpis.get("stockAlerts").hint());
         assertEquals(0, bd("1").compareTo(kpis.get("returnsOpen").value()));
     }
 
     @Test
-    @DisplayName("trend: twelve months, ordered from committed orders, invoiced net of credit notes, paid from executed payments")
+    @DisplayName("trend: twelve months of what was ordered, invoiced and paid")
     void monthlyTrend() {
         DashboardOutput.MonthlyTrend trend = service.getOverview(ADMIN).monthlyTrend();
 
         assertEquals(12, trend.months().size());
         assertEquals("2025-11", trend.months().get(0));
         assertEquals("2026-10", trend.months().get(11));
-        assertEquals(0, bd("2180.00").compareTo(trend.ordered().get(11)), "cancelled excluded, EUR converted (80 x 11.00)");
+        assertEquals(0, bd("2180.00").compareTo(trend.ordered().get(11)));
         assertEquals(0, bd("500.00").compareTo(trend.ordered().get(9)));
-        assertEquals(0, bd("150.00").compareTo(trend.invoiced().get(11)), "200 invoiced, 50 credited this month");
+        assertEquals(0, bd("150.00").compareTo(trend.invoiced().get(11)));
         assertEquals(0, bd("400.00").compareTo(trend.invoiced().get(10)));
-        assertEquals(0, bd("100.00").compareTo(trend.invoiced().get(8)), "a paid invoice still counts as invoiced");
+        assertEquals(0, bd("100.00").compareTo(trend.invoiced().get(8)));
         assertEquals(0, bd("250.00").compareTo(trend.paid().get(11)));
         assertEquals(0, bd("100.00").compareTo(trend.paid().get(10)));
     }
@@ -232,7 +222,7 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
         assertEquals("Fasteners", out.spendByCategory().get(0).label());
         assertEquals(0, bd("1500.00").compareTo(out.spendByCategory().get(0).amount()));
         assertEquals("Coatings", out.spendByCategory().get(1).label(), "matched by material code when the line has no material id");
-        assertEquals(0, bd("1180.00").compareTo(out.spendByCategory().get(1).amount()), "300 MAD + 80 EUR x 11.00");
+        assertEquals(0, bd("1180.00").compareTo(out.spendByCategory().get(1).amount()));
     }
 
     @Test
@@ -241,7 +231,7 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
         DashboardOutput out = service.getOverview(ADMIN);
 
         DashboardOutput.ReceiptQuality q = out.receiptQuality();
-        assertEquals(2, q.receipts(), "draft receipts are not counted");
+        assertEquals(2, q.receipts());
         assertEquals(20, q.unitsReceived());
         assertEquals(2, q.unitsRejected());
         assertEquals(90.0, q.acceptanceRate());
@@ -251,11 +241,11 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
                 .collect(Collectors.toMap(DashboardOutput.AgingBucket::key, DashboardOutput.AgingBucket::amount));
         assertEquals(0, bd("150.00").compareTo(aging.get("NOT_DUE")));
         assertEquals(0, bd("400.00").compareTo(aging.get("31_60")));
-        assertEquals(0, BigDecimal.ZERO.compareTo(aging.get("60_PLUS")), "paid invoices are not outstanding");
+        assertEquals(0, BigDecimal.ZERO.compareTo(aging.get("60_PLUS")));
     }
 
     @Test
-    @DisplayName("stock and activity: active alerts most urgent first, and the latest documents across modules")
+    @DisplayName("stock and activity: active alerts most urgent first, and the latest documents across services")
     void stockAndActivity() {
         DashboardOutput out = service.getOverview(ADMIN);
 
@@ -265,6 +255,7 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
         assertEquals(10, out.recentActivity().size());
         assertEquals("REQUISITION", out.recentActivity().get(0).type());
         assertTrue(out.recentActivity().get(0).link().startsWith("/requisitions/view/"));
+        assertTrue(out.recentActivity().stream().anyMatch(a -> a.type().equals("INVOICE")));
         for (int i = 1; i < out.recentActivity().size(); i++) {
             assertFalse(out.recentActivity().get(i).date().isAfter(out.recentActivity().get(i - 1).date()), "newest first");
         }
@@ -287,24 +278,6 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
 
     // ---- Scenario ----
 
-    /** Removes every procurement document inside the test's transaction; the rollback brings them back. */
-    private void emptyDocumentTables() {
-        for (String sql : List.of(
-                "delete from return_to_vendor_lines", "delete from return_to_vendor",
-                "delete from goods_receipt_lines", "delete from goods_receipts",
-                "update purchase_requisitions set purchase_order_id = null",
-                "delete from purchase_order_lines", "delete from purchase_orders",
-                "delete from purchase_requisition_lines", "delete from purchase_requisitions"
-                )) {
-            jdbc.update(sql);
-        }
-    }
-
-    private void valued(String table, UUID id, String rate, String reporting) {
-        jdbc.update("update " + table + " set fx_rate_to_reporting = ?, fx_reporting_currency = ?, fx_rate_date = ?, "
-                + "fx_rate_source = 'LIVE' where id = ?", new BigDecimal(rate), reporting, Date.valueOf(TODAY.minusDays(2)), id);
-    }
-
     /** Fixed latest rates; no history or exchange-rate service involved. */
     private static final class StubFx implements ReportingFx {
         final Map<CurrencyCode, FxValuation> rates = new java.util.EnumMap<>(CurrencyCode.class);
@@ -317,51 +290,16 @@ class DashboardReadModelIT extends AbstractIntegrationTest {
         @Override public int backfill() { return 0; }
     }
 
-    private String code(String prefix) {
-        return prefix + "-2026-" + String.format("%04d", 9000 + ++sequence);
+    private RecentDocument document(String prefix, LocalDateTime created) {
+        return new RecentDocument(UUID.randomUUID(), prefix + "-2026-" + String.format("%04d", 9000 + ++sequence),
+                null, "SUBMITTED", created);
     }
 
-    private void requisition(String status, int hoursAgo) {
-        jdbc.update("insert into purchase_requisitions (id, requisition_code, title, status, requester_id, requester_name, "
-                        + "created_at, version) values (?, ?, ?, ?, 'requester-1', 'Rita', ?, 0)",
-                UUID.randomUUID(), code("REQ"), "Request " + hoursAgo, status,
-                Timestamp.valueOf(TODAY.atTime(9, 0).minusHours(hoursAgo)));
-    }
-
-    private UUID order(UUID supplier, String name, String status, String total, String currency, LocalDate ordered,
-                       LocalDate expected, UUID material, String materialCode) {
-        UUID id = UUID.randomUUID();
-        jdbc.update("insert into purchase_orders (id, order_code, status, delivery_status, supplier_id, supplier_name, "
-                        + "order_date, expected_delivery_date, currency_code, total_amount, grand_total, created_at, version) "
-                        + "values (?, ?, ?, 'NOT_SHIPPED', ?, ?, ?, ?, ?, ?, ?, ?, 0)",
-                id, code("PO"), status, supplier, name, Date.valueOf(ordered), expected != null ? Date.valueOf(expected) : null,
-                currency, new BigDecimal(total), new BigDecimal(total), Timestamp.valueOf(ordered.atStartOfDay()));
-        jdbc.update("insert into purchase_order_lines (id, purchase_order_id, line_number, material_id, material_code, "
-                        + "quantity, unit_price, line_total, currency_code, created_at, version) "
-                        + "values (?, ?, 1, ?, ?, 1, ?, ?, ?, now(), 0)",
-                UUID.randomUUID(), id, material, materialCode, new BigDecimal(total), new BigDecimal(total), currency);
-        return id;
-    }
-
-    private void receipt(UUID order, UUID supplier, String status, int received, int accepted, LocalDate expected, LocalDate receivedOn) {
-        jdbc.update("insert into goods_receipts (id, receipt_code, purchase_order_id, status, received_by, received_by_name, "
-                        + "supplier_id, total_quantity_received, total_quantity_accepted, total_quantity_rejected, "
-                        + "expected_delivery_date, receipt_date, has_discrepancy, created_at, version) "
-                        + "values (?, ?, ?, ?, 'receiver-1', 'Rita', ?, ?, ?, ?, ?, ?, false, ?, 0)",
-                UUID.randomUUID(), code("GR"), order, status, supplier, received, accepted, received - accepted,
-                expected != null ? Date.valueOf(expected) : null, receivedOn != null ? Date.valueOf(receivedOn) : null,
-                Timestamp.valueOf((receivedOn != null ? receivedOn : TODAY.minusDays(20)).atStartOfDay()));
-    }
-
-    /** A document in finance's latest documents, created on {@code created}. */
-    private RecentDocument document(String prefix, LocalDate created) {
-        return new RecentDocument(UUID.randomUUID(), code(prefix), null, "VERIFIED", created.atStartOfDay());
-    }
-
-    private void returnToVendor(String status) {
-        jdbc.update("insert into return_to_vendor (id, return_code, status, supplier_id, supplier_name, created_at, version) "
-                        + "values (?, ?, ?, ?, 'Acme', ?, 0)",
-                UUID.randomUUID(), code("RTN"), status, acme, Timestamp.valueOf(TODAY.minusDays(20).atStartOfDay()));
+    /** Counts per status in the order given, as procurement answers them (lifecycle order). */
+    private static Map<String, Long> lifecycle(Object... statusAndCount) {
+        Map<String, Long> counts = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < statusAndCount.length; i += 2) counts.put((String) statusAndCount[i], (Long) statusAndCount[i + 1]);
+        return counts;
     }
 
     private static Map<String, Kpi> byKey(DashboardOutput out) {

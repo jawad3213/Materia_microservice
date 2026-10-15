@@ -5,7 +5,6 @@ import com.materia.backend.common.infrastructure.messaging.integration.Integrati
 import com.materia.backend.common.infrastructure.messaging.integration.IntegrationEventHandler;
 import com.materia.grpc.errors.ExceptionTranslatingServerInterceptor;
 import com.materia.grpc.trace.TraceIdServerInterceptor;
-import io.grpc.BindableService;
 import io.grpc.ServerInterceptors;
 import io.grpc.inprocess.InProcessServerBuilder;
 import org.springframework.beans.factory.ObjectProvider;
@@ -19,8 +18,8 @@ import java.io.UncheckedIOException;
 import java.util.UUID;
 
 /**
- * Master data's stand-in for this application's tests: masterdata.v1 (MaterialCatalog, MasterDataMetrics) on the
- * in-process server {@value #SERVER_NAME}, which {@code app.grpc.masterdata.target} points at, over the materials tests
+ * Master data's stand-in for this application's tests: masterdata.v1.MaterialCatalog on the in-process server
+ * {@value #SERVER_NAME}, which {@code app.grpc.masterdata.target} points at, over the materials tests
  * register ({@link #save}); and master data's side of the stock events ({@link TestStockKeeper}), which receives this
  * application's events as master data does and answers through the dispatcher, as from Kafka.
  *
@@ -34,14 +33,11 @@ public class TestMasterData implements IntegrationEventHandler {
     public static final String SERVER_NAME = "test-masterdata";
 
     private static final TestMaterialCatalog CATALOG = new TestMaterialCatalog();
-    private static final TestMasterDataMetrics METRICS = new TestMasterDataMetrics();
 
     static {
         InProcessServerBuilder server = InProcessServerBuilder.forName(SERVER_NAME).directExecutor();
-        for (BindableService service : new BindableService[]{CATALOG, METRICS}) {
-            server.addService(ServerInterceptors.intercept(service, new ExceptionTranslatingServerInterceptor(),
-                    new TraceIdServerInterceptor()));
-        }
+        server.addService(ServerInterceptors.intercept(CATALOG, new ExceptionTranslatingServerInterceptor(),
+                new TraceIdServerInterceptor()));
         try {
             server.build().start();
         } catch (IOException e) {
@@ -72,11 +68,6 @@ public class TestMasterData implements IntegrationEventHandler {
     /** For tests whose work commits: the material leaves master data with the rest of their data. */
     public void remove(UUID id) {
         CATALOG.remove(id);
-    }
-
-    /** What master data answers the dashboard. */
-    public TestMasterDataMetrics metrics() {
-        return METRICS;
     }
 
     @Override

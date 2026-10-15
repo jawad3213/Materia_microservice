@@ -331,7 +331,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: vuln
-          skip-dirs: frontend/node_modules,backend/materia-common/target,backend/materia-grpc/target,backend/monolith/target,backend/identity-service/target,backend/masterdata-service/target,backend/finance-service/target,backend/gateway-service/target
+          skip-dirs: frontend/node_modules,backend/materia-common/target,backend/materia-grpc/target,backend/monolith/target,backend/identity-service/target,backend/masterdata-service/target,backend/finance-service/target,backend/analytics-service/target,backend/gateway-service/target
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           trivyignores: .trivyignore
@@ -392,6 +392,19 @@ jobs:
           exit-code: "1"
           format: table
 
+      - name: Scan the analytics JAR (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: rootfs
+          scan-ref: backend/analytics-service/target
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
       - name: Scan the gateway JAR (Trivy)
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -432,6 +445,13 @@ jobs:
           name: finance-jar
           retention-days: 3
           path: backend/finance-service/target/*.jar
+
+      - name: Keep the scanned analytics JAR for its image
+        uses: actions/upload-artifact@v4
+        with:
+          name: analytics-jar
+          retention-days: 3
+          path: backend/analytics-service/target/*.jar
 
       - name: Keep the scanned gateway JAR for its image
         uses: actions/upload-artifact@v4
@@ -477,6 +497,12 @@ jobs:
           name: finance-jar
           path: backend/finance-service/target
 
+      - name: Get the analytics JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: analytics-jar
+          path: backend/analytics-service/target
+
       - name: Get the gateway JAR
         uses: actions/download-artifact@v4
         with:
@@ -494,6 +520,9 @@ jobs:
 
       - name: Build finance image
         run: docker build --pull -t "$PROJECT-finance:$IMAGE_TAG" backend/finance-service/
+
+      - name: Build analytics image
+        run: docker build --pull -t "$PROJECT-analytics:$IMAGE_TAG" backend/analytics-service/
 
       - name: Build gateway image
         run: docker build --pull -t "$PROJECT-gateway:$IMAGE_TAG" backend/gateway-service/
@@ -550,6 +579,18 @@ jobs:
           trivyignores: .trivyignore
           exit-code: "1"
 
+      - name: Scan analytics image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: image
+          image-ref: ${{ env.PROJECT }}-analytics:${{ env.IMAGE_TAG }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+
       - name: Scan gateway image (Trivy)
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -576,7 +617,7 @@ jobs:
 
       - name: Save images for the push stage
         if: needs.setup.outputs.push_images == 'true'
-        run: docker save "$PROJECT-backend:$IMAGE_TAG" "$PROJECT-identity:$IMAGE_TAG" "$PROJECT-masterdata:$IMAGE_TAG" "$PROJECT-finance:$IMAGE_TAG" "$PROJECT-gateway:$IMAGE_TAG" "$PROJECT-frontend:$IMAGE_TAG" | gzip -1 > images.tar.gz
+        run: docker save "$PROJECT-backend:$IMAGE_TAG" "$PROJECT-identity:$IMAGE_TAG" "$PROJECT-masterdata:$IMAGE_TAG" "$PROJECT-finance:$IMAGE_TAG" "$PROJECT-analytics:$IMAGE_TAG" "$PROJECT-gateway:$IMAGE_TAG" "$PROJECT-frontend:$IMAGE_TAG" | gzip -1 > images.tar.gz
 
       - name: Hand the images to the push stage
         if: needs.setup.outputs.push_images == 'true'
@@ -626,7 +667,7 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           gunzip -c images.tar.gz | docker load
-          for SERVICE in backend identity masterdata finance gateway frontend; do
+          for SERVICE in backend identity masterdata finance analytics gateway frontend; do
             REPOSITORY="$PROJECT-$ENVIRONMENT-$SERVICE"
             TARGET="$REGISTRY/$REPOSITORY:$IMAGE_TAG"
             # Tags are immutable in ECR: a re-run of the same commit finds its image already there.

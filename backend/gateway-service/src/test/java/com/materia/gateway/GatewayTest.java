@@ -54,6 +54,7 @@ class GatewayTest {
     private static final HttpServer IDENTITY = service("identity");
     private static final HttpServer MASTER_DATA = service("masterdata");
     private static final HttpServer FINANCE = service("finance");
+    private static final HttpServer ANALYTICS = service("analytics");
 
     @DynamicPropertySource
     static void routes(DynamicPropertyRegistry registry) {
@@ -61,6 +62,7 @@ class GatewayTest {
         registry.add("gateway.identity-uri", () -> "http://localhost:" + IDENTITY.getAddress().getPort());
         registry.add("gateway.master-data-uri", () -> "http://localhost:" + MASTER_DATA.getAddress().getPort());
         registry.add("gateway.finance-uri", () -> "http://localhost:" + FINANCE.getAddress().getPort());
+        registry.add("gateway.analytics-uri", () -> "http://localhost:" + ANALYTICS.getAddress().getPort());
     }
 
     @AfterAll
@@ -69,6 +71,7 @@ class GatewayTest {
         IDENTITY.stop(0);
         MASTER_DATA.stop(0);
         FINANCE.stop(0);
+        ANALYTICS.stop(0);
     }
 
     @Autowired private WebTestClient client;
@@ -224,6 +227,20 @@ class GatewayTest {
                 "/api/v1/attachments -> backend",
                 "/api/v1/attachments/42/content -> backend",
                 "/api/v1/invoicesx -> backend");
+    }
+
+    @Test
+    @DisplayName("gateway: the dashboard goes to analytics, procurement stays with the monolith")
+    void dashboard_goesToAnalytics() {
+        String token = validToken();
+        for (String path : List.of("/api/v1/dashboard", "/api/v1/dashboard/overview", "/api/v1/purchase-orders")) {
+            client.get().uri(path).header("Authorization", "Bearer " + token).exchange().expectStatus().isOk();
+        }
+
+        assertThat(RECEIVED).extracting(r -> r.get("path") + " -> " + r.get("service")).containsExactly(
+                "/api/v1/dashboard -> analytics",
+                "/api/v1/dashboard/overview -> analytics",
+                "/api/v1/purchase-orders -> backend");
     }
 
     @Test

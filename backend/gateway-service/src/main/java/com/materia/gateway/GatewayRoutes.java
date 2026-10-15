@@ -16,7 +16,8 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
  * data /api/v1/masterdata and the history of its records (Material, Supplier, Category); finance /api/v1/invoices,
  * /api/v1/payments, /api/v1/settings, the history of its records (Invoice, Payment, Setting) and the attachments of
  * invoices (listed and uploaded with {@code ownerType=INVOICE}; read and deleted by id in the monolith, whose
- * attachment table and files finance shares); the monolith the rest of the API and its docs.
+ * attachment table and files finance shares); analytics /api/v1/dashboard; the monolith the rest of the API and its
+ * docs.
  */
 @Configuration
 public class GatewayRoutes {
@@ -41,6 +42,9 @@ public class GatewayRoutes {
                 .route("finance-attachments", route -> route.order(-1)
                         .path("/api/v1/attachments").and().query("ownerType", "INVOICE")
                         .uri(gateway.financeUri()))
+                .route("analytics", route -> route.order(-1)
+                        .path("/api/v1/dashboard", "/api/v1/dashboard/**")
+                        .uri(gateway.analyticsUri()))
                 .route("api", route -> route.path("/api/**").uri(gateway.backendUri()))
                 .route("api-docs", route -> route.path("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**")
                         .uri(gateway.backendUri()))

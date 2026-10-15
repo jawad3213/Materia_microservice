@@ -7,11 +7,8 @@ import com.materia.grpc.deadline.DefaultDeadlineClientInterceptor;
 import com.materia.grpc.errors.ExceptionTranslatingServerInterceptor;
 import com.materia.grpc.trace.TraceIdClientInterceptor;
 import com.materia.grpc.trace.TraceIdServerInterceptor;
-import com.materia.proto.finance.v1.FinanceMetricsGrpc;
-import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
 import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
-import com.materia.proto.procurement.v1.ProcurementMetricsGrpc;
 import com.materia.proto.procurement.v1.PurchaseOrderLookupGrpc;
 import com.materia.proto.procurement.v1.ReplenishmentGrpc;
 import io.grpc.BindableService;
@@ -43,10 +40,9 @@ import java.util.concurrent.TimeUnit;
  *   server and call each other through stubs on an in-process channel. Server and channel run calls on the caller's
  *   thread, so a call joins the caller's transaction as the direct call it replaced.</li>
  *   <li>The same contracts are served to the other services on {@code app.grpc.server.port} (master data raises
- *   replenishment requisitions here; finance reads orders and receipts).</li>
- *   <li>Master data and finance are services of their own: their contracts (MaterialCatalog, MasterDataMetrics;
- *   FinanceMetrics) are reached over the network at {@code app.grpc.masterdata.target} and
- *   {@code app.grpc.finance.target}, with a short deadline. Identity's are wired by the platform
+ *   replenishment requisitions here; finance reads orders and receipts; analytics reads procurement's figures).</li>
+ *   <li>Master data is a service of its own: its catalogue (MaterialCatalog) is reached over the network at
+ *   {@code app.grpc.masterdata.target}, with a short deadline. Identity's contracts are wired by the platform
  *   ({@link IdentityClientConfig}).</li>
  * </ul>
  *
@@ -91,28 +87,6 @@ public class GrpcConfig {
         return MaterialCatalogGrpc.newBlockingStub(masterDataChannel);
     }
 
-    @Bean
-    public MasterDataMetricsGrpc.MasterDataMetricsBlockingStub masterDataMetricsStub(
-            @Qualifier("masterDataChannel") ManagedChannel masterDataChannel) {
-        return MasterDataMetricsGrpc.newBlockingStub(masterDataChannel);
-    }
-
-    // ---- Finance (another service) ----
-
-    @Bean(destroyMethod = "shutdownNow")
-    public ManagedChannel financeChannel(OutgoingCallerToken tokens,
-                                         @Value("${app.grpc.finance.target}") String target,
-                                         @Value("${app.grpc.finance.deadline:5s}") Duration deadline) {
-        return GrpcChannels.to(target, new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
-                new DefaultDeadlineClientInterceptor(deadline));
-    }
-
-    @Bean
-    public FinanceMetricsGrpc.FinanceMetricsBlockingStub financeMetricsStub(
-            @Qualifier("financeChannel") ManagedChannel financeChannel) {
-        return FinanceMetricsGrpc.newBlockingStub(financeChannel);
-    }
-
     // ---- The contexts still in this application ----
 
     @Bean(destroyMethod = "shutdownNow")
@@ -139,11 +113,6 @@ public class GrpcConfig {
     @Bean
     public ReplenishmentGrpc.ReplenishmentBlockingStub replenishmentStub(ManagedChannel grpcChannel) {
         return ReplenishmentGrpc.newBlockingStub(grpcChannel);
-    }
-
-    @Bean
-    public ProcurementMetricsGrpc.ProcurementMetricsBlockingStub procurementMetricsStub(ManagedChannel grpcChannel) {
-        return ProcurementMetricsGrpc.newBlockingStub(grpcChannel);
     }
 
     /** Started before the application takes requests or runs its start-up jobs, stopped after. */

@@ -82,6 +82,17 @@ services:
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
 
   # -----------------------------------------------------------------
+  # Analytics (Dev: dev profile; exposed on ANALYTICS_PORT)
+  # -----------------------------------------------------------------
+  analytics:
+    restart: unless-stopped
+    ports:
+      - "${ANALYTICS_PORT:-8085}:8085"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+
+  # -----------------------------------------------------------------
   # Gateway (Dev: exposed on GATEWAY_PORT, to call the API the way the frontend does)
   # -----------------------------------------------------------------
   gateway:

@@ -28,7 +28,7 @@ import java.util.Map;
 
 /**
  * finance.v1.FinanceMetrics answering what a test set: how finance computes its figures (what is outstanding, what
- * counts as invoiced or paid) is its own tests' business; this application's tests check what the dashboard makes of
+ * counts as invoiced or paid) is its own tests' business; analytics' tests check what the dashboard makes of
  * them. Every figure is empty or zero until a test sets it; {@link #reset} empties them again.
  */
 public class TestFinanceMetrics extends FinanceMetricsGrpc.FinanceMetricsImplBase {

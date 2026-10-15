@@ -79,6 +79,21 @@ services:
           memory: 256M
 
   # -----------------------------------------------------------------
+  # Analytics (Prod: internal only, reached through the gateway)
+  # -----------------------------------------------------------------
+  analytics:
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 256M
+
+  # -----------------------------------------------------------------
   # Gateway: reached by the frontend's nginx only
   # -----------------------------------------------------------------
   gateway:

@@ -6,7 +6,7 @@
 #
 # Only the frontend publishes a port to the network: its nginx serves
 # the SPA and proxies /api to the gateway, which routes it to identity,
-# master data, finance or the backend. Gateway, services, Kafka and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
+# master data, finance, analytics or the backend. Gateway, services, Kafka and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
 # reach them through an SSM port forward (see aws/README.md).
 # ===================================================================
 name: materia
@@ -75,7 +75,6 @@ services:
       SERVICE_CLIENT_ID: monolith
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_MASTERDATA_TARGET: masterdata:9092
-      GRPC_FINANCE_TARGET: finance:9093
       # Its outbox relay publishes the shared outbox (every service's events) to Kafka.
       APP_MESSAGING_TYPE: kafka
       APP_OUTBOX_RELAY_ENABLED: "true"
@@ -218,6 +217,44 @@ services:
     logging: *logging
     networks: [internal]
 
+  # Analytics: the dashboard, composed from the other services' figures over gRPC; REST on 8085 (through the
+  # gateway), serves no contract. Needs the shared tables the backend's migrations create, so it waits for it.
+  analytics:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-analytics:${IMAGE_TAG}
+    restart: always
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      # The shared .env is the backend's: these keep analytics on its own schema, without Kafka or a relay, and its keys
+      SPRING_FLYWAY_DEFAULT_SCHEMA: analytics
+      APP_MESSAGING_TYPE: spring
+      APP_OUTBOX_RELAY_ENABLED: "false"
+      JWT_PRIVATE_KEY: ""
+      GRPC_IDENTITY_TARGET: identity:9091
+      GRPC_MONOLITH_TARGET: backend:9090
+      GRPC_MASTERDATA_TARGET: masterdata:9092
+      GRPC_FINANCE_TARGET: finance:9093
+      SPRINGDOC_INFO_TITLE: Materia Analytics API
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
+      MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    mem_limit: 384m
+    logging: *logging
+    networks: [internal]
+
   # The API gateway: refuses invalid tokens, rate-limits, routes /api to identity or the backend
   gateway:
     image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-gateway:${IMAGE_TAG}
@@ -227,6 +264,7 @@ services:
       GATEWAY_IDENTITY_URI: http://identity:8082
       GATEWAY_MASTERDATA_URI: http://masterdata:8083
       GATEWAY_FINANCE_URI: http://finance:8084
+      GATEWAY_ANALYTICS_URI: http://analytics:8085
       MANAGEMENT_SERVER_PORT: "8081"
       MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
     depends_on:
@@ -237,6 +275,8 @@ services:
       masterdata:
         condition: service_started
       finance:
+        condition: service_started
+      analytics:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]

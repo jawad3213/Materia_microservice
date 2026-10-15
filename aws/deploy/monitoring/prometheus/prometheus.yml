@@ -35,6 +35,12 @@ scrape_configs:
     static_configs:
       - targets: ["finance:8081"]
 
+  # Analytics: the dashboard (and the calls it makes to the other services)
+  - job_name: analytics
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["analytics:8081"]
+
   # The API gateway: every request from outside, refusals (401, 429) included
   - job_name: gateway
     metrics_path: /actuator/prometheus

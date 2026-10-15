@@ -15,7 +15,7 @@ import java.util.Map;
 
 /**
  * masterdata.v1.MasterDataMetrics answering what a test set ({@link #answer}): which materials are stock alerts and
- * the category of each material. How master data picks them is its own tests' business; this application's tests
+ * the category of each material. How master data picks them is its own tests' business; analytics' tests
  * check what the dashboard makes of the answers. Nothing is an alert until a test says so.
  */
 public class TestMasterDataMetrics extends MasterDataMetricsGrpc.MasterDataMetricsImplBase {

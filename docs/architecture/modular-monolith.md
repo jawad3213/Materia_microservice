@@ -33,8 +33,8 @@ tables. The shared code names no context's table; each context plugs its own dat
 The only way in from outside: the frontend's nginx proxies `/api` (and the API docs) to the gateway, which routes
 them to the service that owns the path: identity (`/api/v1/auth`, `/api/v1/employees`, the JWK set), master data
 (`/api/v1/masterdata`), finance (`/api/v1/invoices`, `/api/v1/payments`, `/api/v1/settings`, and the attachments of
-invoices: `ownerType=INVOICE`), each with the change history of its own records (`/api/v1/audit/<Type>`), and the
-monolith for the rest. Anything not routed (actuator, internal endpoints) answers 404.
+invoices: `ownerType=INVOICE`), analytics (`/api/v1/dashboard`), each with the change history of its own records
+(`/api/v1/audit/<Type>`), and the monolith (procurement) for the rest. Anything not routed (actuator, internal endpoints) answers 404.
 
 ```
 browser ─▶ nginx (frontend) ─▶ gateway ─▶ backend (monolith) ─▶ PostgreSQL
@@ -86,10 +86,11 @@ the application with `./mvnw -pl monolith -am spring-boot:run`.
 | `materia-common` | The shared kernel above (`com.materia.backend.common`). | Spring, JPA, Kafka |
 | `materia-grpc` | The contracts between services (`src/main/proto/materia/<service>/v1`), the stubs generated from them (`com.materia.proto.*`), and the interceptors every service installs (`com.materia.grpc.*`). | `materia-common`, grpc-java |
 | `materia-platform` | What every service runs on: security chain, token keys, error handling, database and Kafka setup, the gRPC server, channels and identity client. | `materia-common`, `materia-grpc` |
-| `monolith` | The contexts not extracted yet (procurement and the dashboard). Services leave it one at a time; what remains becomes the procurement service. | `materia-platform` |
+| `monolith` | Procurement (`purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor`): REST 8080, gRPC `procurement.v1` 9090; owns the shared kernel's migrations and relays the shared outbox to Kafka. The procurement service in all but name. | `materia-platform` |
 | `identity-service` | Identity (`auth`, `employee`): REST 8082, gRPC `identity.v1` 9091; the only signer of tokens. | `materia-platform` |
 | `masterdata-service` | Master data (`masterData`): REST 8083, gRPC `masterdata.v1` 9092; keeps stock from procurement's events (Kafka). | `materia-platform` |
 | `finance-service` | Finance (`invoice`, `payment`, `settings`): REST 8084, gRPC `finance.v1` 9093; reads procurement's orders and receipts (`procurement.v1`) for the three-way match. | `materia-platform` |
+| `analytics-service` | Analytics (`dashboard`, `analytics`): REST 8085; composes the other services' figures (`procurement.v1`, `masterdata.v1`, `finance.v1` metrics) and owns no table. | `materia-platform` |
 
 ### gRPC contracts
 

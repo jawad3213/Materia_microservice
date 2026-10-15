@@ -437,10 +437,12 @@ cd backend
 ./mvnw -pl masterdata-service -am spring-boot:run
 # Finance (REST 8084, gRPC 9093) : factures, paiements, paramètres
 ./mvnw -pl finance-service -am spring-boot:run
-# La passerelle (port 8090) : le seul point d'entrée, qui route vers identity, master data, finance et le monolithe
+# Analytics (REST 8085) : le tableau de bord, composé des chiffres des autres services
+./mvnw -pl analytics-service -am spring-boot:run
+# La passerelle (port 8090) : le seul point d'entrée, qui route vers chaque service et le monolithe
 SERVER_PORT=8090 MANAGEMENT_SERVER_PORT=8091 GATEWAY_IDENTITY_URI=http://localhost:8082 \
   GATEWAY_MASTERDATA_URI=http://localhost:8083 GATEWAY_FINANCE_URI=http://localhost:8084 \
-  ./mvnw -pl gateway-service -am spring-boot:run
+  GATEWAY_ANALYTICS_URI=http://localhost:8085 ./mvnw -pl gateway-service -am spring-boot:run
 ```
 *Le frontend appelle l'API via la passerelle : `http://localhost:8090/api/v1`. Les événements entre services passent par Kafka (`localhost:9092`, par exemple `docker compose up -d kafka`).*
 

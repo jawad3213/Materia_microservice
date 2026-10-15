@@ -70,7 +70,6 @@ services:
       SERVICE_CLIENT_SECRET: ${SERVICE_CLIENT_MONOLITH_SECRET}
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_MASTERDATA_TARGET: masterdata:9092
-      GRPC_FINANCE_TARGET: finance:9093
     volumes:
       - attachments_data:/app/data/attachments
     depends_on:
@@ -102,6 +101,7 @@ services:
       SERVICE_CLIENT_MONOLITH_SECRET: ${SERVICE_CLIENT_MONOLITH_SECRET}
       SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
       SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
+      SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
       APP_BOOTSTRAP_ADMIN_EMAIL: ${APP_BOOTSTRAP_ADMIN_EMAIL:-}
       APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:-}
     depends_on:
@@ -176,9 +176,40 @@ services:
       - materia-net
 
   # -----------------------------------------------------------------
+  # Analytics: the dashboard, composed from the other services' figures (gRPC: procurement on the backend, master
+  # data, finance). REST on 8085 (through the gateway); serves no contract and owns no table.
+  # Needs the shared tables the backend's migrations create: started after it, and restarted until they exist.
+  # Build its jar first: cd backend && ./mvnw -pl analytics-service -am package -DskipTests
+  # -----------------------------------------------------------------
+  analytics:
+    build:
+      context: ./backend/analytics-service
+      dockerfile: Dockerfile
+    container_name: materia-analytics
+    restart: on-failure
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
+      GRPC_IDENTITY_TARGET: identity:9091
+      GRPC_MONOLITH_TARGET: backend:9090
+      GRPC_MASTERDATA_TARGET: masterdata:9092
+      GRPC_FINANCE_TARGET: finance:9093
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - materia-net
+
+  # -----------------------------------------------------------------
   # API Gateway (Spring Cloud Gateway): the only way in to the services.
   # Routes /api/v1/auth, /api/v1/employees and the JWK set to identity, /api/v1/masterdata to master data,
-  # /api/v1/invoices, /api/v1/payments and /api/v1/settings to finance, the rest of /api to the backend;
+  # /api/v1/invoices, /api/v1/payments and /api/v1/settings to finance, /api/v1/dashboard to analytics, the rest of
+  # /api to the backend;
   # refuses invalid tokens, rate-limits clients.
   # Build its jar first: cd backend && ./mvnw -pl gateway-service -am package -DskipTests
   # -----------------------------------------------------------------
@@ -192,6 +223,7 @@ services:
       GATEWAY_IDENTITY_URI: http://identity:8082
       GATEWAY_MASTERDATA_URI: http://masterdata:8083
       GATEWAY_FINANCE_URI: http://finance:8084
+      GATEWAY_ANALYTICS_URI: http://analytics:8085
     depends_on:
       backend:
         condition: service_started
@@ -200,6 +232,8 @@ services:
       masterdata:
         condition: service_started
       finance:
+        condition: service_started
+      analytics:
         condition: service_started
     networks:
       - materia-net

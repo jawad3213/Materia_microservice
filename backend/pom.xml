@@ -35,6 +35,8 @@
         <module>masterdata-service</module>
         <!-- Finance: invoices, payments and their settings. -->
         <module>finance-service</module>
+        <!-- Analytics: the dashboard, composed from the other services' figures. -->
+        <module>analytics-service</module>
         <!-- The API gateway: the only way in from outside, in front of the services. -->
         <module>gateway-service</module>
     </modules>

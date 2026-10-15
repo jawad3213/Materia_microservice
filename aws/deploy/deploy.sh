@@ -68,10 +68,10 @@ health() {
   [ -n "$id" ] && docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id"
 }
 
-# The backend, then identity, master data and finance (which start once the backend is healthy)
+# The backend, then the services that start once it is healthy
 wait_healthy() {
   local service
-  for service in backend identity masterdata finance; do
+  for service in backend identity masterdata finance analytics; do
     for _ in $(seq 1 60); do
       case "$(health "$service" || true)" in
         healthy) continue 2 ;;
@@ -96,7 +96,7 @@ start() {
 
 report_images() {
   local service id image
-  for service in backend identity masterdata finance gateway frontend; do
+  for service in backend identity masterdata finance analytics gateway frontend; do
     id="$(docker compose ps -q "$service")"
     [ -n "$id" ] || continue
     image="$(docker inspect --format '{{.Image}}' "$id")"

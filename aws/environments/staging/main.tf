@@ -15,7 +15,7 @@ locals {
 
   # Repositories whose images this environment promotes (prod: staging's), same account and region
   promotion_source_repository_arns = var.promote_from_environment == "" ? [] : [
-    for service in ["backend", "identity", "masterdata", "finance", "gateway", "frontend"] :
+    for service in ["backend", "identity", "masterdata", "finance", "analytics", "gateway", "frontend"] :
     "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project}-${var.promote_from_environment}-${service}"
   ]
 
@@ -128,6 +128,12 @@ resource "random_password" "service_client_finance" {
   special = false # the value goes through a docker compose .env file
 }
 
+# The secret analytics presents to identity for its service tokens.
+resource "random_password" "service_client_analytics" {
+  length  = 48
+  special = false # the value goes through a docker compose .env file
+}
+
 # Grafana's admin account (aws/deploy/docker-compose.yml); Grafana is reached through an SSM port forward only.
 resource "random_password" "grafana_admin" {
   length  = 32
@@ -168,6 +174,7 @@ module "app_parameters" {
       SERVICE_CLIENT_MONOLITH_SECRET   = random_password.service_client_monolith.result
       SERVICE_CLIENT_MASTERDATA_SECRET = random_password.service_client_masterdata.result
       SERVICE_CLIENT_FINANCE_SECRET    = random_password.service_client_finance.result
+      SERVICE_CLIENT_ANALYTICS_SECRET  = random_password.service_client_analytics.result
     },
     local.bootstrap_admin.secrets,
     var.extra_secrets,
