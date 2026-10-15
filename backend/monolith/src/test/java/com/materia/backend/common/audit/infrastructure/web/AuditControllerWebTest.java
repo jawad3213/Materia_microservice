@@ -3,11 +3,13 @@ package com.materia.backend.common.audit.infrastructure.web;
 import com.materia.backend.common.audit.application.AuditLogReader;
 import com.materia.backend.common.audit.application.AuditLogReader.AuditEntry;
 import com.materia.backend.common.audit.application.AuditLogReader.FieldChange;
+import com.materia.backend.common.audit.application.LocalAuditFeed;
 import com.materia.backend.support.AbstractWebMvcTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
 
 import java.time.LocalDateTime;
@@ -28,6 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** The history HTTP contract: a record's history needs the permission that reads the record; the feed needs log:read. */
 @WebMvcTest(AuditController.class)
+@Import(LocalAuditFeed.class)
 class AuditControllerWebTest extends AbstractWebMvcTest {
 
     private static final String BASE = "/api/v1/audit";

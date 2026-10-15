@@ -7,7 +7,10 @@
 #
 # 1. writes .env from Parameter Store (/$PROJECT/$ENVIRONMENT/app/*)
 # 2. pulls the images tagged IMAGE_TAG and restarts the stack, with
-#    the monitoring (Prometheus, Grafana) configuration in ./monitoring
+#    the monitoring (Prometheus, Grafana) configuration in ./monitoring:
+#    the database first, then each service's database user
+#    (db/service-roles.sql), procurement (the backend), the users again
+#    (procurement's migrations may have created schemas), the rest
 # 3. waits for the backend health check; on failure rolls back to the
 #    previously deployed tag and exits non-zero
 # 4. prints the lines the deploy workflow reads:
@@ -72,22 +75,43 @@ health() {
 wait_healthy() {
   local service
   for service in backend identity masterdata finance analytics; do
-    for _ in $(seq 1 60); do
-      case "$(health "$service" || true)" in
-        healthy) continue 2 ;;
-        unhealthy) log "$service is unhealthy"; return 1 ;;
-      esac
-      sleep 5
-    done
-    log "$service did not become healthy in time"
-    return 1
+    wait_service "$service" || return 1
   done
+}
+
+env_value() {
+  grep -m1 "^$1=" .env | cut -d= -f2-
+}
+
+# Each service's database user, owning its schema and nothing else (one database per service)
+apply_db_roles() {
+  docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1     -U "$(env_value POSTGRES_USER)" -d "$(env_value POSTGRES_DB)"     -v identity_password="$(env_value DB_PASSWORD_IDENTITY)"     -v masterdata_password="$(env_value DB_PASSWORD_MASTERDATA)"     -v procurement_password="$(env_value DB_PASSWORD_PROCUREMENT)"     -v finance_password="$(env_value DB_PASSWORD_FINANCE)"     -v analytics_password="$(env_value DB_PASSWORD_ANALYTICS)"     -f - <db/service-roles.sql
+  log "Database users applied"
+}
+
+wait_service() {
+  for _ in $(seq 1 60); do
+    case "$(health "$1" || true)" in
+      healthy) return 0 ;;
+      unhealthy) log "$1 is unhealthy"; return 1 ;;
+    esac
+    sleep 5
+  done
+  log "$1 did not become healthy in time"
+  return 1
 }
 
 start() {
   local tag="$1"
   write_env "$tag"
   docker compose pull --quiet
+  # Not fatal here: a stack that does not come up is rolled back after wait_healthy
+  docker compose up -d postgres kafka
+  wait_service postgres || true
+  apply_db_roles
+  docker compose up -d backend
+  wait_service backend || true
+  apply_db_roles
   docker compose up -d --remove-orphans
   # Configuration files are mounted, not baked in: make the running monitoring read the ones just shipped
   docker compose kill -s SIGHUP prometheus >/dev/null 2>&1 || true
@@ -106,8 +130,13 @@ report_images() {
 
 [ -f .bootstrapped ] || { log "Host bootstrap has not finished yet"; exit 1; }
 
-# Attachment files: owned by the backend container user, which finance shares (uid 10001, see backend/monolith/Dockerfile)
+# Attachment files: owned by the services' container user (uid 10001, see backend/monolith/Dockerfile). Finance keeps
+# its own (invoice scans); the ones stored with procurement's before one database per service are copied over once.
 install -d -m 750 -o 10001 -g 10001 /data/attachments
+install -d -m 750 -o 10001 -g 10001 /data/finance-attachments
+if [ -d /data/attachments/invoice ] && [ ! -e /data/finance-attachments/invoice ]; then
+  cp -a /data/attachments/invoice /data/finance-attachments/invoice
+fi
 # Monitoring data, owned by the users the images run as (Prometheus: nobody, Grafana: 472)
 install -d -m 750 -o 65534 -g 65534 /data/prometheus
 install -d -m 750 -o 472 -g 0 /data/grafana

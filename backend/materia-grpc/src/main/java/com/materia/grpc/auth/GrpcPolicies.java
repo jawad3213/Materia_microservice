@@ -1,5 +1,6 @@
 package com.materia.grpc.auth;
 
+import com.materia.proto.audit.v1.ChangeHistoryGrpc;
 import com.materia.proto.finance.v1.FinanceMetricsGrpc;
 import com.materia.proto.identity.v1.ServiceTokensGrpc;
 import com.materia.proto.identity.v1.UserDirectoryGrpc;
@@ -79,6 +80,10 @@ public final class GrpcPolicies {
                 RpcPolicy.users("receipt:read"));
         forMethods(ProcurementMetricsGrpc.getServiceDescriptor(), List.of(
                 "CountReturnsInStatus", "LatestReturns"), RpcPolicy.users("return:read"));
+
+        // ---- audit.v1 (served by every service with a change history) ----
+        // The platform-wide feed of the audit log page, which asks for log:read over REST.
+        put(ChangeHistoryGrpc.getRecentChangesMethod(), RpcPolicy.users("log:read"));
 
         // ---- finance.v1 ----
         forMethods(FinanceMetricsGrpc.getServiceDescriptor(), List.of(

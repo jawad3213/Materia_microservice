@@ -99,6 +99,7 @@ services:
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       SERVICE_CLIENT_MONOLITH_SECRET: ${SERVICE_CLIENT_MONOLITH_SECRET}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
       SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
       SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
       SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
@@ -147,7 +148,7 @@ services:
   # -----------------------------------------------------------------
   # Finance: invoices (matched against procurement's orders and receipts), payments, settings.
   # REST on 8084 (through the gateway), gRPC finance.v1 on 9093 (for the dashboard); reads procurement on the backend
-  # (gRPC 9090). Shares the backend's attachments volume (supplier invoice scans) until each service has its own.
+  # (gRPC 9090). Keeps its own attachment files (supplier invoice scans).
   # Needs the shared tables the backend's migrations create: started after it, and restarted until they exist.
   # Build its jar first: cd backend && ./mvnw -pl finance-service -am package -DskipTests
   # -----------------------------------------------------------------
@@ -163,10 +164,11 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_MONOLITH_TARGET: backend:9090
     volumes:
-      - attachments_data:/app/data/attachments
+      - finance_attachments_data:/app/data/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -259,6 +261,8 @@ volumes:
   postgres_data:
     driver: local
   attachments_data:
+    driver: local
+  finance_attachments_data:
     driver: local
 
 networks:

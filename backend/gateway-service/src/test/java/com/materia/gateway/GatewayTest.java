@@ -213,8 +213,8 @@ class GatewayTest {
         String token = validToken();
         for (String path : List.of("/api/v1/invoices", "/api/v1/payments/42", "/api/v1/settings",
                 "/api/v1/audit/Invoice/42", "/api/v1/attachments?ownerType=INVOICE&ownerId=42",
-                "/api/v1/attachments?ownerType=PURCHASE_ORDER&ownerId=42", "/api/v1/attachments/42/content",
-                "/api/v1/invoicesx")) {
+                "/api/v1/attachments?ownerType=PURCHASE_ORDER&ownerId=42", "/api/v1/attachments/42/content?ownerType=INVOICE",
+                "/api/v1/attachments/42/content?ownerType=GOODS_RECEIPT", "/api/v1/invoicesx")) {
             client.get().uri(path).header("Authorization", "Bearer " + token).exchange().expectStatus().isOk();
         }
 
@@ -225,6 +225,7 @@ class GatewayTest {
                 "/api/v1/audit/Invoice/42 -> finance",
                 "/api/v1/attachments -> finance",
                 "/api/v1/attachments -> backend",
+                "/api/v1/attachments/42/content -> finance",
                 "/api/v1/attachments/42/content -> backend",
                 "/api/v1/invoicesx -> backend");
     }
