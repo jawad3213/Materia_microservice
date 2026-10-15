@@ -30,10 +30,11 @@ public class KafkaConfig {
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
-    @Value("${spring.kafka.consumer.group-id}")
+    // The service's own consumer group unless set (app.events.consumer-group, one per service)
+    @Value("${spring.kafka.consumer.group-id:${app.events.consumer-group:materia}}")
     private String groupId;
 
-    @Value("${spring.kafka.consumer.auto-offset-reset}")
+    @Value("${spring.kafka.consumer.auto-offset-reset:earliest}")
     private String autoOffsetReset;
 
     // ============================================

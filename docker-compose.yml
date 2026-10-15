@@ -1,6 +1,44 @@
 # ===================================================================
 # Materia Base Compose (Backbone for dev, staging, prod)
 # ===================================================================
+
+# Each service's database user (one database per service): it owns its schema and nothing else, as on EC2.
+# aws/deploy/db/service-roles.sql creates them, run by the PostgreSQL admin before the backend starts and again once
+# it has migrated (db-roles, db-roles-handover). The passwords default to local-only values; set DB_PASSWORD_* in
+# .env to change them.
+x-db-roles: &db-roles
+  image: postgres:16-alpine
+  environment:
+    PGPASSWORD: ${POSTGRES_PASSWORD}
+  volumes:
+    - ./aws/deploy/db:/db:ro
+  entrypoint:
+    - psql
+    - -q
+    - -v
+    - ON_ERROR_STOP=1
+    - -h
+    - postgres
+    - -U
+    - ${POSTGRES_USER}
+    - -d
+    - ${POSTGRES_DB}
+    - -v
+    - identity_password=${DB_PASSWORD_IDENTITY:-materia_identity_local}
+    - -v
+    - masterdata_password=${DB_PASSWORD_MASTERDATA:-materia_masterdata_local}
+    - -v
+    - procurement_password=${DB_PASSWORD_PROCUREMENT:-materia_procurement_local}
+    - -v
+    - finance_password=${DB_PASSWORD_FINANCE:-materia_finance_local}
+    - -v
+    - analytics_password=${DB_PASSWORD_ANALYTICS:-materia_analytics_local}
+    - -f
+    - /db/service-roles.sql
+  restart: "no"
+  networks:
+    - materia-net
+
 services:
 
   # -----------------------------------------------------------------
@@ -22,6 +60,24 @@ services:
       retries: 5
     networks:
       - materia-net
+
+  # -----------------------------------------------------------------
+  # The services' database users: before the backend starts, then handing the schemas its legacy migrations create
+  # to their services before those start (see x-db-roles)
+  # -----------------------------------------------------------------
+  db-roles:
+    <<: *db-roles
+    container_name: materia-db-roles
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  db-roles-handover:
+    <<: *db-roles
+    container_name: materia-db-roles-handover
+    depends_on:
+      backend:
+        condition: service_healthy
 
   # -----------------------------------------------------------------
   # Apache Kafka (KRaft Mode)
@@ -57,8 +113,8 @@ services:
     container_name: materia-backend
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_USERNAME: materia_procurement
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_PROCUREMENT:-materia_procurement_local}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
       # Events cross services through Kafka (master data keeps stock from procurement's events): the outbox relay
       # publishes the committed events of the shared outbox to materia.<context>.events.
@@ -73,17 +129,25 @@ services:
     volumes:
       - attachments_data:/app/data/attachments
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-roles:
+        condition: service_completed_successfully
       kafka:
         condition: service_started
+    # Healthy once migrated, when the services' schemas are handed over (db-roles-handover). Liveness, not readiness:
+    # it is up once the context has started (Flyway has run), before the dev seed, which waits for identity.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health/liveness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
     networks:
       - materia-net
 
   # -----------------------------------------------------------------
   # Identity: sign-in, accounts, employees; the only signer of tokens.
   # REST on 8082 (through the gateway), gRPC identity.v1 on 9091 (for the other services).
-  # Needs the shared tables the backend's migrations create: started after it, and restarted until they exist.
+  # Connects as its own database user; starts once the backend has migrated and its schema is handed over.
   # Build its jar first: cd backend && ./mvnw -pl identity-service -am package -DskipTests
   # -----------------------------------------------------------------
   identity:
@@ -94,8 +158,8 @@ services:
     restart: on-failure
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_USERNAME: materia_identity
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_IDENTITY:-materia_identity_local}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       SERVICE_CLIENT_MONOLITH_SECRET: ${SERVICE_CLIENT_MONOLITH_SECRET}
@@ -106,8 +170,8 @@ services:
       APP_BOOTSTRAP_ADMIN_EMAIL: ${APP_BOOTSTRAP_ADMIN_EMAIL:-}
       APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:-}
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-roles-handover:
+        condition: service_completed_successfully
       backend:
         condition: service_started
     networks:
@@ -117,7 +181,7 @@ services:
   # Master data: materials, categories, suppliers, stock.
   # REST on 8083 (through the gateway), gRPC masterdata.v1 on 9092 (for the other services). Keeps stock from
   # procurement's events (Kafka) and raises replenishment requisitions in the backend (gRPC 9090).
-  # Needs the shared tables the backend's migrations create: started after it, and restarted until they exist.
+  # Connects as its own database user; starts once the backend has migrated and its schema is handed over.
   # Build its jar first: cd backend && ./mvnw -pl masterdata-service -am package -DskipTests
   # -----------------------------------------------------------------
   masterdata:
@@ -128,16 +192,16 @@ services:
     restart: on-failure
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_USERNAME: materia_masterdata
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_MASTERDATA:-materia_masterdata_local}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_MONOLITH_TARGET: backend:9090
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-roles-handover:
+        condition: service_completed_successfully
       kafka:
         condition: service_started
       backend:
@@ -149,7 +213,7 @@ services:
   # Finance: invoices (matched against procurement's orders and receipts), payments, settings.
   # REST on 8084 (through the gateway), gRPC finance.v1 on 9093 (for the dashboard); reads procurement on the backend
   # (gRPC 9090). Keeps its own attachment files (supplier invoice scans).
-  # Needs the shared tables the backend's migrations create: started after it, and restarted until they exist.
+  # Connects as its own database user; starts once the backend has migrated and its schema is handed over.
   # Build its jar first: cd backend && ./mvnw -pl finance-service -am package -DskipTests
   # -----------------------------------------------------------------
   finance:
@@ -160,8 +224,8 @@ services:
     restart: on-failure
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_USERNAME: materia_finance
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_FINANCE:-materia_finance_local}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
@@ -170,8 +234,8 @@ services:
     volumes:
       - finance_attachments_data:/app/data/attachments
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-roles-handover:
+        condition: service_completed_successfully
       backend:
         condition: service_started
     networks:
@@ -180,7 +244,7 @@ services:
   # -----------------------------------------------------------------
   # Analytics: the dashboard, composed from the other services' figures (gRPC: procurement on the backend, master
   # data, finance). REST on 8085 (through the gateway); serves no contract and owns no table.
-  # Needs the shared tables the backend's migrations create: started after it, and restarted until they exist.
+  # Connects as its own database user; starts once the backend has migrated and its schema is handed over.
   # Build its jar first: cd backend && ./mvnw -pl analytics-service -am package -DskipTests
   # -----------------------------------------------------------------
   analytics:
@@ -191,8 +255,8 @@ services:
     restart: on-failure
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_USERNAME: materia_analytics
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_ANALYTICS:-materia_analytics_local}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
       GRPC_IDENTITY_TARGET: identity:9091
@@ -200,8 +264,8 @@ services:
       GRPC_MASTERDATA_TARGET: masterdata:9092
       GRPC_FINANCE_TARGET: finance:9093
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-roles-handover:
+        condition: service_completed_successfully
       backend:
         condition: service_started
     networks:

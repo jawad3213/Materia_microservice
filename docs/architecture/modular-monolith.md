@@ -79,7 +79,9 @@ database server of its own is a dump of its schema.
   by analytics over `audit.v1.ChangeHistory`), its own attachments (the gateway routes attachment requests by owner
   type) and its own exchange rates (refreshed daily by procurement, finance and analytics).
 - On EC2, `deploy.sh` applies the database users before the services start and again once procurement migrated (on
-  a new database, procurement's legacy migrations still create every context's tables before moving them).
+  a new database, procurement's legacy migrations still create every context's tables before moving them). Local
+  `docker compose` does the same with two one-shot services, `db-roles` and `db-roles-handover`; the passwords
+  default to local-only values (`DB_PASSWORD_*` in `.env`).
 - No foreign key crosses two schemas (`SchemaPerServiceMigrationIT` checks it on a migrated database).
 - New migrations name the schema of every table they touch (`alter table finance.invoices ...`).
 - Rolling back to an image older than V13: run `db/rollback/V13__undo_schema_per_service.sql` first (it puts every
@@ -95,7 +97,7 @@ the application with `./mvnw -pl monolith -am spring-boot:run`.
 | `materia-common` | The shared kernel above (`com.materia.backend.common`). | Spring, JPA, Kafka |
 | `materia-grpc` | The contracts between services (`src/main/proto/materia/<service>/v1`), the stubs generated from them (`com.materia.proto.*`), and the interceptors every service installs (`com.materia.grpc.*`). | `materia-common`, grpc-java |
 | `materia-platform` | What every service runs on: security chain, token keys, error handling, database and Kafka setup, the gRPC server, channels and identity client. | `materia-common`, `materia-grpc` |
-| `monolith` | Procurement (`purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor`): REST 8080, gRPC `procurement.v1` 9090; owns the shared kernel's migrations and relays the shared outbox to Kafka. The procurement service in all but name. | `materia-platform` |
+| `monolith` | Procurement (`purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor`): REST 8080, gRPC `procurement.v1` 9090; its legacy migrations create the schemas and own the legacy tables in `public`. The procurement service in all but name. | `materia-platform` |
 | `identity-service` | Identity (`auth`, `employee`): REST 8082, gRPC `identity.v1` 9091; the only signer of tokens. | `materia-platform` |
 | `masterdata-service` | Master data (`masterData`): REST 8083, gRPC `masterdata.v1` 9092; keeps stock from procurement's events (Kafka). | `materia-platform` |
 | `finance-service` | Finance (`invoice`, `payment`, `settings`): REST 8084, gRPC `finance.v1` 9093; reads procurement's orders and receipts (`procurement.v1`) for the three-way match. | `materia-platform` |
@@ -248,4 +250,3 @@ raises replenishment requisitions in procurement with a command (`procurement.v1
   contexts must use `getLineSummaries()`.
 - **The dashboard's metrics** cross services through 32 fine-grained RPCs. When analytics is extracted, measure how
   many a dashboard load makes; an event-fed read model in analytics can replace the hottest ones.
-- **Local `docker compose`** connects every service as the admin user; only the `search_path` keeps it to its schema.

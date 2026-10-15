@@ -9,6 +9,7 @@ import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -19,10 +20,13 @@ import java.util.UUID;
 /**
  * The dev accounts (DevSeed's three e-mails), for the seeders of a service other than identity: identity seeds them,
  * so they are looked up in identity's directory, by the role each has. Identity may still be starting when the service
- * seeds, so the lookup waits for it for a while; without it the seeders run without users and say so.
+ * seeds (locally it starts once the backend has migrated), so the lookup waits for it for a while; without it the
+ * seeders run without users and say so. Only where identity's directory is a client (IdentityClientConfig): identity
+ * itself sets no target, and needs none.
  */
 @Component
 @Profile(DevSeed.PROFILE)
+@ConditionalOnProperty(name = "app.grpc.identity.target")
 public class DevUsers {
 
     private static final Logger log = LoggerFactory.getLogger(DevUsers.class);
@@ -30,7 +34,7 @@ public class DevUsers {
             DevSeed.ADMIN_EMAIL, "ADMIN",
             DevSeed.PURCHASER_EMAIL, "PURCHASER",
             DevSeed.RECEIVER_EMAIL, "RECEIVER");
-    private static final int ATTEMPTS = 30;
+    private static final int ATTEMPTS = 150;
     private static final long PAUSE_MS = 2_000;
 
     /** What a seeder needs of an account. */
@@ -55,7 +59,7 @@ public class DevUsers {
                         .findFirst()
                         .map(DevUsers::toSeedUser);
             } catch (StatusRuntimeException e) {
-                if (e.getStatus().getCode() != Status.Code.UNAVAILABLE) throw e;
+                if (!notUpYet(e.getStatus().getCode())) throw e;
                 if (attempt == ATTEMPTS) {
                     log.warn("[DEV-SEED] Identity unreachable: seeding without the account {}", email);
                     return Optional.empty();
@@ -64,6 +68,11 @@ public class DevUsers {
             }
         }
         return Optional.empty();
+    }
+
+    /** Identity starting: not reachable yet, or too slow to answer (its service token, or the lookup). */
+    private static boolean notUpYet(Status.Code code) {
+        return code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED;
     }
 
     private static SeedUser toSeedUser(UserSummary user) {

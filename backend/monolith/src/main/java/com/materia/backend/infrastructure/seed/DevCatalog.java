@@ -30,7 +30,7 @@ import java.util.UUID;
 public class DevCatalog {
 
     private static final Logger log = LoggerFactory.getLogger(DevCatalog.class);
-    private static final int ATTEMPTS = 60;
+    private static final int ATTEMPTS = 150;
     private static final long PAUSE_MS = 2_000;
 
     /** What a seeder needs of an orderable material. */
@@ -79,7 +79,9 @@ public class DevCatalog {
                         .toList();
                 if (!materials.isEmpty()) return materials;
             } catch (StatusRuntimeException e) {
-                if (e.getStatus().getCode() != Status.Code.UNAVAILABLE) throw e;
+                // Still starting: not reachable yet, or too slow to answer (identity's service token included)
+                Status.Code code = e.getStatus().getCode();
+                if (code != Status.Code.UNAVAILABLE && code != Status.Code.DEADLINE_EXCEEDED) throw e;
             }
             if (attempt == ATTEMPTS) break;
             sleep();

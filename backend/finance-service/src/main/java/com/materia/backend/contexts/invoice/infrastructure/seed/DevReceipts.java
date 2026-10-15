@@ -28,7 +28,7 @@ import java.util.UUID;
 public class DevReceipts {
 
     private static final Logger log = LoggerFactory.getLogger(DevReceipts.class);
-    private static final int ATTEMPTS = 90;
+    private static final int ATTEMPTS = 150;
     private static final long PAUSE_MS = 2_000;
 
     /** What the invoice seeder needs of a validated receipt. */
@@ -58,7 +58,9 @@ public class DevReceipts {
                         .toList();
                 if (!found.isEmpty()) return found;
             } catch (StatusRuntimeException e) {
-                if (e.getStatus().getCode() != Status.Code.UNAVAILABLE) throw e;
+                // Still starting: not reachable yet, or too slow to answer (identity's service token included)
+                Status.Code code = e.getStatus().getCode();
+                if (code != Status.Code.UNAVAILABLE && code != Status.Code.DEADLINE_EXCEEDED) throw e;
             }
             if (attempt == ATTEMPTS) break;
             sleep();
