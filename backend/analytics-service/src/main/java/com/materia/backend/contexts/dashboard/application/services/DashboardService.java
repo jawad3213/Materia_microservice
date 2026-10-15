@@ -24,6 +24,7 @@ import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadMode
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.ReceiptTotals;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.StockRow;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,13 +41,23 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
  * Builds the procurement dashboard from aggregates the database computes ({@link DashboardReadModel}), so its cost
  * does not grow with the number of documents. Each section is computed only when the user holds the permission that
  * reads its source (Role.java), so a receiver never sees invoice or payment figures.
+ *
+ * <p>The aggregates are asked for side by side on {@code executor} (each one is a call to another service), in two
+ * waves: at once, the documents per currency and every figure that needs no exchange rate; then, once the rates are
+ * known, the amounts in the reporting currency. The executor must run each task as the user who opened the dashboard
+ * (CallContextExecutor), so every call carries that user's rights.
  */
 @Service
 @Transactional(readOnly = true)
@@ -78,16 +89,24 @@ public class DashboardService implements DashboardUseCase {
     private final DashboardReadModel readModel;
     private final ReportingFx fx;
     private final Clock clock;
+    private final Executor executor;
 
     @Autowired
-    public DashboardService(DashboardReadModel readModel, ReportingFx fx) {
-        this(readModel, fx, Clock.systemDefaultZone());
+    public DashboardService(DashboardReadModel readModel, ReportingFx fx,
+                            @Qualifier("dashboardExecutor") Executor executor) {
+        this(readModel, fx, Clock.systemDefaultZone(), executor);
     }
 
+    /** Asks for one aggregate after the other, on the caller's thread. */
     public DashboardService(DashboardReadModel readModel, ReportingFx fx, Clock clock) {
+        this(readModel, fx, clock, Runnable::run);
+    }
+
+    public DashboardService(DashboardReadModel readModel, ReportingFx fx, Clock clock, Executor executor) {
         this.readModel = readModel;
         this.fx = fx;
         this.clock = clock;
+        this.executor = executor;
     }
 
     @Override
@@ -95,9 +114,22 @@ public class DashboardService implements DashboardUseCase {
         Access access = new Access(permissions == null ? Set.of() : permissions);
         LocalDate today = LocalDate.now(clock);
 
-        Map<String, Long> byCurrency = access.orders || access.invoices || access.payments
-                ? readModel.documentsByCurrency(access.orders, access.invoices, access.payments)
-                : Map.of();
+        // ---- First wave: the documents per currency, and every figure that needs no exchange rate ----
+        CompletableFuture<Map<String, Long>> currencies = access.orders || access.invoices || access.payments
+                ? ask(() -> readModel.documentsByCurrency(access.orders, access.invoices, access.payments))
+                : done(Map.of());
+        CompletableFuture<Kpi> requisitionsKpi = access.requisitions ? requisitionsKpi() : done(null);
+        CompletableFuture<Kpi> receiptsKpi = access.receipts ? receiptsKpi(today) : done(null);
+        CompletableFuture<Kpi> stockKpi = access.materials ? stockKpi() : done(null);
+        CompletableFuture<Kpi> returnsKpi = access.returns ? returnsKpi() : done(null);
+        CompletableFuture<List<Slice>> orderStatus = access.orders ? ask(this::orderStatus) : done(List.of());
+        CompletableFuture<ReceiptQuality> receiptQuality = access.receipts
+                ? ask(() -> receiptQuality(readModel.receiptTotals(DONE_RECEIPTS)))
+                : done(null);
+        CompletableFuture<List<StockAlert>> stockAlerts = access.materials ? ask(this::stockAlerts) : done(List.of());
+        CompletableFuture<List<Activity>> activity = recentActivity(access);
+
+        Map<String, Long> byCurrency = join(currencies);
         String currency = fx.reportingCurrency().getCode();
         boolean foreign = byCurrency.keySet().stream().anyMatch(c -> !c.equalsIgnoreCase(currency));
         // Stored rates only; the exchange-rate service is not called on every dashboard load.
@@ -108,24 +140,62 @@ public class DashboardService implements DashboardUseCase {
                 .mapToLong(Map.Entry::getValue)
                 .sum();
 
-        List<DueGroup> payable = access.invoices
-                ? readModel.outstandingByDueDate("STANDARD", PAYABLE_INVOICES, rates)
-                : List.of();
+        // ---- Second wave: the amounts, in the reporting currency ----
+        CompletableFuture<List<DueGroup>> payable = access.invoices
+                ? ask(() -> readModel.outstandingByDueDate("STANDARD", PAYABLE_INVOICES, rates))
+                : done(List.of());
+        CompletableFuture<Kpi> ordersKpi = access.orders ? ordersKpi(today, rates) : done(null);
+        CompletableFuture<Kpi> invoicesKpi = access.invoices
+                ? payable.thenApply(groups -> invoicesKpi(today, currency, groups))
+                : done(null);
+        CompletableFuture<Kpi> paymentsKpi = access.payments ? paymentsKpi(today, rates) : done(null);
+        CompletableFuture<MonthlyTrend> trend = access.orders || access.invoices || access.payments
+                ? monthlyTrend(access, today, rates)
+                : done(null);
+        CompletableFuture<List<Slice>> categories = access.orders ? ask(() -> spendByCategory(rates)) : done(List.of());
+        CompletableFuture<List<SupplierStats>> suppliers = access.orders ? topSuppliers(rates) : done(List.of());
+        CompletableFuture<CurrencyConversion> conversion = foreign
+                ? ask(() -> conversion(access, currency, byCurrency, latest, unconverted))
+                : done(null);
 
+        List<Kpi> kpis = Stream.of(requisitionsKpi, ordersKpi, receiptsKpi, invoicesKpi, paymentsKpi, stockKpi, returnsKpi)
+                .map(DashboardService::join)
+                .filter(Objects::nonNull)
+                .toList();
         return new DashboardOutput(
                 LocalDateTime.now(clock),
                 currency,
                 unconverted,
-                kpis(access, today, rates, payable),
-                access.orders || access.invoices || access.payments ? monthlyTrend(access, today, rates) : null,
-                access.orders ? orderStatus() : List.of(),
-                access.orders ? spendByCategory(rates) : List.of(),
-                access.orders ? topSuppliers(rates) : List.of(),
-                access.receipts ? receiptQuality(readModel.receiptTotals(DONE_RECEIPTS)) : null,
-                access.invoices ? invoiceAging(today, payable) : List.of(),
-                access.materials ? stockAlerts() : List.of(),
-                recentActivity(access),
-                foreign ? conversion(access, currency, byCurrency, latest, unconverted) : null);
+                kpis,
+                join(trend),
+                join(orderStatus),
+                join(categories),
+                join(suppliers),
+                join(receiptQuality),
+                access.invoices ? invoiceAging(today, join(payable)) : List.of(),
+                join(stockAlerts),
+                join(activity),
+                join(conversion));
+    }
+
+    /** An aggregate, asked for on the executor. */
+    private <T> CompletableFuture<T> ask(Supplier<T> aggregate) {
+        return CompletableFuture.supplyAsync(aggregate, executor);
+    }
+
+    private static <T> CompletableFuture<T> done(T value) {
+        return CompletableFuture.completedFuture(value);
+    }
+
+    /** The value of a figure; a failure is thrown as it was raised, as when asked for on the caller's thread. */
+    private static <T> T join(CompletableFuture<T> figure) {
+        try {
+            return figure.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException cause) throw cause;
+            if (e.getCause() instanceof Error error) throw error;
+            throw e;
+        }
     }
 
     // ============================================================
@@ -179,71 +249,70 @@ public class DashboardService implements DashboardUseCase {
     // KPIs
     // ============================================================
 
-    private List<Kpi> kpis(Access access, LocalDate today, Rates rates, List<DueGroup> payable) {
-        String currency = rates.reportingCurrency();
-        List<Kpi> kpis = new ArrayList<>();
+    private CompletableFuture<Kpi> requisitionsKpi() {
+        CompletableFuture<Long> awaiting = ask(() -> readModel.countRequisitions("SUBMITTED"));
+        CompletableFuture<Long> approved = ask(() -> readModel.countRequisitions("APPROVED"));
+        return awaiting.thenCombine(approved, (waiting, ready) -> new Kpi("requisitionsAwaiting", "Awaiting Approval",
+                BigDecimal.valueOf(waiting), "requisitions", ready + " approved, not yet ordered",
+                "/requisitions/approvals", "amber"));
+    }
+
+    private CompletableFuture<Kpi> ordersKpi(LocalDate today, Rates rates) {
+        CompletableFuture<Long> open = ask(() -> readModel.countOrders(OPEN_ORDERS));
+        CompletableFuture<Long> late = ask(() -> readModel.countOrdersExpectedBefore(OPEN_ORDERS, today));
+        CompletableFuture<BigDecimal> value = ask(() -> readModel.sumOrders(OPEN_ORDERS, rates));
+        return CompletableFuture.allOf(open, late, value).thenApply(all -> new Kpi("openOrders", "Open Orders",
+                scale(value.join()), rates.reportingCurrency(), open.join() + " order(s), " + late.join() + " late",
+                "/purchase-orders", late.join() > 0 ? "red" : "brand"));
+    }
+
+    private CompletableFuture<Kpi> receiptsKpi(LocalDate today) {
         YearMonth thisMonth = YearMonth.from(today);
+        LocalDate from = thisMonth.atDay(1);
+        LocalDate to = thisMonth.atEndOfMonth();
+        CompletableFuture<Long> received = ask(() -> readModel.countReceipts(DONE_RECEIPTS, from, to, false));
+        CompletableFuture<Long> rejected = ask(() -> readModel.countReceipts(DONE_RECEIPTS, from, to, true));
+        return received.thenCombine(rejected, (all, withRejection) -> new Kpi("receiptsThisMonth", "Receipts This Month",
+                BigDecimal.valueOf(all), "receipts", withRejection + " with rejected goods", "/goods-receipts",
+                withRejection > 0 ? "orange" : "green"));
+    }
 
-        if (access.requisitions) {
-            long awaiting = readModel.countRequisitions("SUBMITTED");
-            long approved = readModel.countRequisitions("APPROVED");
-            kpis.add(new Kpi("requisitionsAwaiting", "Awaiting Approval", BigDecimal.valueOf(awaiting), "requisitions",
-                    approved + " approved, not yet ordered", "/requisitions/approvals", "amber"));
+    private static Kpi invoicesKpi(LocalDate today, String currency, List<DueGroup> payable) {
+        BigDecimal toPay = BigDecimal.ZERO;
+        BigDecimal overdueAmount = BigDecimal.ZERO;
+        long overdue = 0;
+        for (DueGroup group : payable) {
+            boolean late = group.dueDate() != null && group.dueDate().isBefore(today);
+            if (late) overdue += group.invoices();
+            toPay = toPay.add(group.outstanding());
+            if (late) overdueAmount = overdueAmount.add(group.outstanding());
         }
+        return new Kpi("invoicesToPay", "Invoices to Pay", scale(toPay), currency,
+                overdue + " overdue: " + scale(overdueAmount) + " " + currency, "/invoices", overdue == 0 ? "blue" : "red");
+    }
 
-        if (access.orders) {
-            long open = readModel.countOrders(OPEN_ORDERS);
-            long late = readModel.countOrdersExpectedBefore(OPEN_ORDERS, today);
-            kpis.add(new Kpi("openOrders", "Open Orders", scale(readModel.sumOrders(OPEN_ORDERS, rates)),
-                    currency, open + " order(s), " + late + " late", "/purchase-orders", late > 0 ? "red" : "brand"));
-        }
+    private CompletableFuture<Kpi> paymentsKpi(LocalDate today, Rates rates) {
+        YearMonth thisMonth = YearMonth.from(today);
+        CompletableFuture<BigDecimal> paid = ask(() -> readModel.paymentsByMonth("COMPLETED", rates, thisMonth.atDay(1),
+                thisMonth.atEndOfMonth()).stream().map(MonthAmount::amount).reduce(BigDecimal.ZERO, BigDecimal::add));
+        CompletableFuture<Long> toExecute = ask(() -> readModel.countPayments("PENDING"));
+        return paid.thenCombine(toExecute, (amount, pending) -> new Kpi("paidThisMonth", "Paid This Month", scale(amount),
+                rates.reportingCurrency(), pending + " payment(s) prepared, to execute", "/payments", "green"));
+    }
 
-        if (access.receipts) {
-            LocalDate from = thisMonth.atDay(1);
-            LocalDate to = thisMonth.atEndOfMonth();
-            long received = readModel.countReceipts(DONE_RECEIPTS, from, to, false);
-            long rejected = readModel.countReceipts(DONE_RECEIPTS, from, to, true);
-            kpis.add(new Kpi("receiptsThisMonth", "Receipts This Month", BigDecimal.valueOf(received), "receipts",
-                    rejected + " with rejected goods", "/goods-receipts", rejected > 0 ? "orange" : "green"));
-        }
+    private CompletableFuture<Kpi> stockKpi() {
+        CompletableFuture<Long> alerts = ask(() -> readModel.countStockAlerts(false));
+        CompletableFuture<Long> out = ask(() -> readModel.countStockAlerts(true));
+        return alerts.thenCombine(out, (all, empty) -> new Kpi("stockAlerts", "Stock Alerts", BigDecimal.valueOf(all),
+                "materials", empty + " out of stock", "/materials", all > 0 ? "orange" : "green"));
+    }
 
-        if (access.invoices) {
-            BigDecimal toPay = BigDecimal.ZERO;
-            BigDecimal overdueAmount = BigDecimal.ZERO;
-            long overdue = 0;
-            for (DueGroup group : payable) {
-                boolean late = group.dueDate() != null && group.dueDate().isBefore(today);
-                if (late) overdue += group.invoices();
-                toPay = toPay.add(group.outstanding());
-                if (late) overdueAmount = overdueAmount.add(group.outstanding());
-            }
-            kpis.add(new Kpi("invoicesToPay", "Invoices to Pay", scale(toPay), currency,
-                    overdue + " overdue: " + scale(overdueAmount) + " " + currency, "/invoices", overdue == 0 ? "blue" : "red"));
-        }
-
-        if (access.payments) {
-            BigDecimal paid = readModel.paymentsByMonth("COMPLETED", rates, thisMonth.atDay(1), thisMonth.atEndOfMonth())
-                    .stream().map(MonthAmount::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-            long toExecute = readModel.countPayments("PENDING");
-            kpis.add(new Kpi("paidThisMonth", "Paid This Month", scale(paid), currency,
-                    toExecute + " payment(s) prepared, to execute", "/payments", "green"));
-        }
-
-        if (access.materials) {
-            long alerts = readModel.countStockAlerts(false);
-            long out = readModel.countStockAlerts(true);
-            kpis.add(new Kpi("stockAlerts", "Stock Alerts", BigDecimal.valueOf(alerts), "materials", out + " out of stock",
-                    "/materials", alerts > 0 ? "orange" : "green"));
-        }
-
-        if (access.returns) {
-            long withSupplier = readModel.countReturns("PENDING");
-            long drafts = readModel.countReturns("DRAFT");
-            kpis.add(new Kpi("returnsOpen", "Returns with Suppliers", BigDecimal.valueOf(withSupplier), "returns",
-                    drafts + " draft(s) to ship", "/returns", withSupplier > 0 ? "amber" : "green"));
-        }
-
-        return kpis;
+    private CompletableFuture<Kpi> returnsKpi() {
+        CompletableFuture<Long> withSupplier = ask(() -> readModel.countReturns("PENDING"));
+        CompletableFuture<Long> drafts = ask(() -> readModel.countReturns("DRAFT"));
+        return withSupplier.thenCombine(drafts, (pending, draft) -> new Kpi("returnsOpen", "Returns with Suppliers",
+                BigDecimal.valueOf(pending), "returns", draft + " draft(s) to ship", "/returns",
+                pending > 0 ? "amber" : "green"));
     }
 
     // ============================================================
@@ -251,18 +320,24 @@ public class DashboardService implements DashboardUseCase {
     // ============================================================
 
     /** Ordered (committed orders), invoiced (net of credit notes) and paid (executed payments) per month. */
-    private MonthlyTrend monthlyTrend(Access access, LocalDate today, Rates rates) {
+    private CompletableFuture<MonthlyTrend> monthlyTrend(Access access, LocalDate today, Rates rates) {
         YearMonth last = YearMonth.from(today);
         YearMonth first = last.minusMonths(TREND_MONTHS - 1L);
         List<YearMonth> months = Stream.iterate(first, m -> m.plusMonths(1)).limit(TREND_MONTHS).toList();
         LocalDate from = first.atDay(1);
         LocalDate to = last.atEndOfMonth();
 
-        return new MonthlyTrend(
-                months.stream().map(YearMonth::toString).toList(),
-                access.orders ? perMonth(months, readModel.ordersByMonth(COMMITTED_ORDERS, rates, from, to)) : List.of(),
-                access.invoices ? perMonth(months, readModel.invoicedByMonth(NOT_INVOICED, rates, from, to)) : List.of(),
-                access.payments ? perMonth(months, readModel.paymentsByMonth("COMPLETED", rates, from, to)) : List.of());
+        CompletableFuture<List<BigDecimal>> ordered = access.orders
+                ? ask(() -> perMonth(months, readModel.ordersByMonth(COMMITTED_ORDERS, rates, from, to)))
+                : done(List.of());
+        CompletableFuture<List<BigDecimal>> invoiced = access.invoices
+                ? ask(() -> perMonth(months, readModel.invoicedByMonth(NOT_INVOICED, rates, from, to)))
+                : done(List.of());
+        CompletableFuture<List<BigDecimal>> paid = access.payments
+                ? ask(() -> perMonth(months, readModel.paymentsByMonth("COMPLETED", rates, from, to)))
+                : done(List.of());
+        return CompletableFuture.allOf(ordered, invoiced, paid).thenApply(all -> new MonthlyTrend(
+                months.stream().map(YearMonth::toString).toList(), ordered.join(), invoiced.join(), paid.join()));
     }
 
     /** Number of orders in each status, in lifecycle order, statuses with no order left out. */
@@ -295,14 +370,21 @@ public class DashboardService implements DashboardUseCase {
         return slices;
     }
 
-    /** The suppliers with the most committed spend, with the quality and punctuality of their deliveries. */
-    private List<SupplierStats> topSuppliers(Rates rates) {
-        List<Group> top = readModel.spendBySupplier(COMMITTED_ORDERS, rates).stream()
+    /**
+     * The suppliers with the most committed spend, with the quality and punctuality of their deliveries (asked for at
+     * the same time as the spend, so even when there is none).
+     */
+    private CompletableFuture<List<SupplierStats>> topSuppliers(Rates rates) {
+        CompletableFuture<List<Group>> spend = ask(() -> readModel.spendBySupplier(COMMITTED_ORDERS, rates));
+        CompletableFuture<Map<UUID, ReceiptTotals>> receipts = ask(() -> readModel.receiptTotalsBySupplier(DONE_RECEIPTS));
+        return spend.thenCombine(receipts, DashboardService::topSuppliers);
+    }
+
+    private static List<SupplierStats> topSuppliers(List<Group> spend, Map<UUID, ReceiptTotals> receipts) {
+        List<Group> top = spend.stream()
                 .sorted(Comparator.comparing(Group::amount).reversed())
                 .limit(TOP_SUPPLIERS)
                 .toList();
-        if (top.isEmpty()) return List.of();
-        Map<UUID, ReceiptTotals> receipts = readModel.receiptTotalsBySupplier(DONE_RECEIPTS);
         return top.stream()
                 .map(g -> {
                     ReceiptQuality quality = receiptQuality(receipts.getOrDefault(UUID.fromString(g.key()), ReceiptTotals.NONE));
@@ -361,23 +443,26 @@ public class DashboardService implements DashboardUseCase {
     }
 
     /** The latest documents created in the modules the user can read. */
-    private List<Activity> recentActivity(Access access) {
-        List<Activity> all = new ArrayList<>();
-        if (access.requisitions) addActivity(all, ActivitySource.REQUISITION, "REQUISITION", "/requisitions/view/");
-        if (access.orders) addActivity(all, ActivitySource.PURCHASE_ORDER, "PURCHASE_ORDER", "/purchase-orders/");
-        if (access.receipts) addActivity(all, ActivitySource.GOODS_RECEIPT, "GOODS_RECEIPT", "/goods-receipts/");
-        if (access.invoices) addActivity(all, ActivitySource.INVOICE, "INVOICE", "/invoices/");
-        if (access.payments) addActivity(all, ActivitySource.PAYMENT, "PAYMENT", "/payments/");
-        if (access.returns) addActivity(all, ActivitySource.RETURN, "RETURN", "/returns/");
-        return all.stream()
+    private CompletableFuture<List<Activity>> recentActivity(Access access) {
+        List<CompletableFuture<List<Activity>>> modules = new ArrayList<>();
+        if (access.requisitions) modules.add(activity(ActivitySource.REQUISITION, "REQUISITION", "/requisitions/view/"));
+        if (access.orders) modules.add(activity(ActivitySource.PURCHASE_ORDER, "PURCHASE_ORDER", "/purchase-orders/"));
+        if (access.receipts) modules.add(activity(ActivitySource.GOODS_RECEIPT, "GOODS_RECEIPT", "/goods-receipts/"));
+        if (access.invoices) modules.add(activity(ActivitySource.INVOICE, "INVOICE", "/invoices/"));
+        if (access.payments) modules.add(activity(ActivitySource.PAYMENT, "PAYMENT", "/payments/"));
+        if (access.returns) modules.add(activity(ActivitySource.RETURN, "RETURN", "/returns/"));
+        return CompletableFuture.allOf(modules.toArray(CompletableFuture[]::new)).thenApply(all -> modules.stream()
+                .flatMap(module -> module.join().stream())
                 .sorted(Comparator.comparing(Activity::date).reversed())
                 .limit(MAX_ACTIVITY)
-                .toList();
+                .toList());
     }
 
-    private void addActivity(List<Activity> all, ActivitySource source, String type, String link) {
-        readModel.latest(source, MAX_ACTIVITY).forEach(row -> all.add(new Activity(type,
-                row.code() != null ? row.code() : "—", row.title(), row.status(), row.createdAt(), link + row.id())));
+    private CompletableFuture<List<Activity>> activity(ActivitySource source, String type, String link) {
+        return ask(() -> readModel.latest(source, MAX_ACTIVITY).stream()
+                .map(row -> new Activity(type, row.code() != null ? row.code() : "—", row.title(), row.status(),
+                        row.createdAt(), link + row.id()))
+                .toList());
     }
 
     // ============================================================

@@ -9,6 +9,7 @@ import com.materia.backend.common.domain.fx.ReportingFx;
 import com.materia.backend.contexts.dashboard.application.dtos.DashboardOutput;
 import com.materia.backend.contexts.dashboard.application.dtos.DashboardOutput.Kpi;
 import com.materia.backend.contexts.dashboard.application.services.DashboardService;
+import com.materia.backend.infrastructure.grpc.CallContextExecutor;
 import com.materia.backend.support.fixtures.InProcessGrpc;
 import com.materia.backend.support.fixtures.TestFinanceMetrics;
 import com.materia.backend.support.fixtures.TestMasterDataMetrics;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import static com.materia.backend.support.fixtures.TestFinanceMetrics.month;
@@ -43,7 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The dashboard composed from the other services' figures, read through their contracts (procurement.v1, finance.v1,
  * masterdata.v1) as in production: one scenario of every document type, checked figure by figure. How each service
  * computes its figures is its own tests' business (ProcurementMetricsIT, FinanceMetricsIT, JpaMaterialMetricsIT, on
- * the same scenario); this test checks what the dashboard makes of them.
+ * the same scenario); this test checks what the dashboard makes of them, asked for side by side as in production.
  */
 class DashboardOverServicesTest {
 
@@ -70,7 +72,8 @@ class DashboardOverServicesTest {
         service = new DashboardService(new ModuleMetricsReadModel(
                 ProcurementMetricsGrpc.newBlockingStub(InProcessGrpc.serving(procurement)),
                 FinanceMetricsGrpc.newBlockingStub(InProcessGrpc.serving(finance)),
-                MasterDataMetricsGrpc.newBlockingStub(InProcessGrpc.serving(masterData))), fx, clock);
+                MasterDataMetricsGrpc.newBlockingStub(InProcessGrpc.serving(masterData))), fx, clock,
+                new CallContextExecutor(Executors.newVirtualThreadPerTaskExecutor()));
         fx.rates.put(CurrencyCode.EUR, new FxValuation(CurrencyCode.EUR, CurrencyCode.MAD, bd("10.80"), TODAY, FxValuation.LIVE));
 
         // Procurement: requisitions (2 submitted, 1 approved); orders from Acme (1000.00 confirmed, expected yesterday;

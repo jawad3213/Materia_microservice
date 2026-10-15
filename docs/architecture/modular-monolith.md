@@ -246,5 +246,9 @@ raises replenishment requisitions in procurement with a command (`procurement.v1
 
 - **Retiring the legacy tables in `public`:** once every environment has run each service's copy migration, a
   procurement migration can drop them (no service reads them).
-- **The dashboard's metrics** cross services through 32 fine-grained RPCs. When analytics is extracted, measure how
-  many a dashboard load makes; an event-fed read model in analytics can replace the hottest ones.
+- **The dashboard's metrics** cross services through fine-grained RPCs: a load makes 32 calls for an admin or a
+  purchaser and 23 for a receiver (37 for an admin with foreign currencies and spend), pinned by
+  `DashboardAccessPolicyTest`. They run side by side in two waves (`DashboardService`, on `CallContextExecutor`,
+  which keeps each call the user's), so a load waits for about six calls in a row, not all of them: on the local stack
+  an admin's load went from a median of 1.3 s (8 s at the 90th percentile) to 0.5 s (1.1 s). If that is still too
+  slow, an event-fed read model in analytics can replace the hottest figures.
