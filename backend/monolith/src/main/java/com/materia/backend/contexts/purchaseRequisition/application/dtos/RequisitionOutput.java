@@ -2,7 +2,6 @@ package com.materia.backend.contexts.purchaseRequisition.application.dtos;
 
 import com.materia.backend.common.application.BaseOutput;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.purchaseRequisition.domain.entities.RequisitionLine;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -37,7 +36,7 @@ public class RequisitionOutput extends BaseOutput {
     private String cancellationReason;
     private String purchaseOrderId;
     private String purchaseOrderCode;
-    private List<RequisitionLine> lines = new ArrayList<>();
+    private List<RequisitionLineOutput> lines = new ArrayList<>();
     private String createdBy;
     private LocalDateTime createdAt;
     private String updatedBy;
@@ -219,20 +218,18 @@ public class RequisitionOutput extends BaseOutput {
         this.purchaseOrderCode = purchaseOrderCode;
     }
 
-    public List<RequisitionLine> getLines() {
+    /** The lines as the requisition's own web layer shows them; other contexts use {@link #getLineSummaries()}. */
+    public List<RequisitionLineOutput> getLines() {
         return lines;
     }
 
-    public void setLines(List<RequisitionLine> lines) {
+    public void setLines(List<RequisitionLineOutput> lines) {
         this.lines = lines != null ? new ArrayList<>(lines) : new ArrayList<>();
     }
 
-    /** The lines as other contexts may see them; {@link #getLines()} exposes domain entities and stays internal. */
+    /** The lines as other contexts may see them. */
     public List<RequisitionLineSummary> getLineSummaries() {
-        return (lines != null ? lines : List.<RequisitionLine>of()).stream()
-                .map(line -> new RequisitionLineSummary(line.getId(), line.getMaterialCode(), line.getQuantity(),
-                        line.getSupplierId()))
-                .toList();
+        return lines.stream().map(RequisitionLineOutput::toSummary).toList();
     }
 
     public String getCreatedBy() {

@@ -17,6 +17,7 @@ import com.materia.backend.contexts.purchaseOrder.domain.ports.out.PurchaseOrder
 import com.materia.backend.contexts.purchaseOrder.domain.ports.out.PurchaseOrderRepository;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.out.ReceiverDirectory;
 import com.materia.backend.contexts.purchaseOrder.domain.valueObjects.OrderCode;
+import com.materia.backend.contexts.purchaseRequisition.application.dtos.RequisitionLineOutput;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.RequisitionOutput;
 import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.RequisitionInvalidStatusTransitionException;
 import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.RequisitionNotFoundException;
@@ -75,7 +76,7 @@ class PurchaseOrderServiceConversionTest {
         com.materia.backend.contexts.purchaseRequisition.domain.entities.RequisitionLine line =
                 new com.materia.backend.contexts.purchaseRequisition.domain.entities.RequisitionLine("MAT-1", 3);
         line.setId(REQUISITION_LINE_ID);
-        out.setLines(new ArrayList<>(List.of(line)));
+        out.setLines(List.of(RequisitionLineOutput.from(line)));
         return out;
     }
 

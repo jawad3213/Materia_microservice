@@ -2,6 +2,7 @@ package com.materia.backend.contexts.purchaseRequisition.application.mappers;
 
 import com.materia.backend.common.application.BaseMapper;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.CreateRequisitionInput;
+import com.materia.backend.contexts.purchaseRequisition.application.dtos.RequisitionLineOutput;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.RequisitionOutput;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.UpdateRequisitionInput;
 import com.materia.backend.contexts.purchaseRequisition.domain.entities.Requisition;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -103,7 +105,10 @@ public class RequisitionMapper implements BaseMapper<Requisition, CreateRequisit
         response.setCancellationReason(entity.getCancellationReason());
         response.setPurchaseOrderId(entity.getPurchaseOrderId());
         response.setPurchaseOrderCode(entity.getPurchaseOrderCode());
-        response.setLines(copyLines(entity.getLines()));
+        response.setLines(entity.getLines() == null ? List.of() : entity.getLines().stream()
+                .filter(Objects::nonNull)
+                .map(RequisitionLineOutput::from)
+                .toList());
         response.setCreatedBy(entity.getCreatedBy());
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedBy(entity.getUpdatedBy());
