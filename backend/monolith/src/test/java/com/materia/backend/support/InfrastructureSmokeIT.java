@@ -5,12 +5,16 @@ import org.flywaydb.core.api.MigrationInfo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Set;
+import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -24,10 +28,10 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class InfrastructureSmokeIT extends AbstractIntegrationTest {
 
-    /** db/migration holds V1__init.sql to V13__schema_per_service.sql; raise this with each new migration. */
-    private static final int EXPECTED_MIGRATIONS = 13;
+    /** db/migration holds V1__init.sql to V14__procurement_shared_kernel_tables.sql; raise this with each new one. */
+    private static final int EXPECTED_MIGRATIONS = 14;
 
-    /** The schemas the application's tables live in: one per service, and public for the shared kernel. */
+    /** The schemas the tables live in: one per service, and public for the legacy shared kernel. */
     private static final String SCHEMAS = "('identity', 'masterdata', 'procurement', 'finance', 'analytics', 'public')";
 
     /** Where each table lives (V13__schema_per_service.sql). */
@@ -53,13 +57,14 @@ class InfrastructureSmokeIT extends AbstractIntegrationTest {
             Map.entry("invoice_lines", "finance"),
             Map.entry("payments", "finance"),
             Map.entry("payment_lines", "finance"),
-            Map.entry("app_settings", "finance"),
-            Map.entry("global_code_sequences", "public"),
-            Map.entry("outbox_messages", "public"),
-            Map.entry("processed_events", "public"),
-            Map.entry("audit_log", "public"),
-            Map.entry("exchange_rates", "public"),
-            Map.entry("attachments", "public"));
+            Map.entry("app_settings", "finance"));
+
+    /**
+     * The shared kernel's tables: procurement's own copy (V14, one database per service), and the legacy ones every
+     * service shared in public, which the monolith's migrations still create on a new database.
+     */
+    private static final List<String> SHARED_KERNEL = List.of("global_code_sequences", "outbox_messages",
+            "processed_events", "audit_log", "exchange_rates", "attachments");
 
     @Autowired
     private Flyway flyway;
@@ -79,7 +84,7 @@ class InfrastructureSmokeIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("schema: all 28 tables exist (outbox, inbox, audit log, exchange rates, attachments and settings included), including out-of-scope ones that validation requires")
+    @DisplayName("schema: all 34 tables exist: the 22 of the contexts, the shared kernel's 6 in public, and procurement's own copy of them")
     void allEntityTablesExist() {
         Integer tables = jdbc.queryForObject(
                 "select count(*) from information_schema.tables "
@@ -87,31 +92,44 @@ class InfrastructureSmokeIT extends AbstractIntegrationTest {
                         + "and table_name <> 'flyway_schema_history'",
                 Integer.class);
 
-        assertEquals(28, tables);
+        assertEquals(SCHEMA_OF.size() + 2 * SHARED_KERNEL.size(), tables);
     }
 
     @Test
-    @DisplayName("schema: every table lives in the schema of the service that owns it, the shared kernel's in public")
+    @DisplayName("schema: every table lives in the schema of the service that owns it; procurement has its own shared kernel")
     void everyTableLivesInItsServicesSchema() {
-        Map<String, String> actual = new TreeMap<>();
-        jdbc.query("select table_name, table_schema from information_schema.tables "
-                        + "where table_schema in " + SCHEMAS + " and table_type = 'BASE TABLE' "
-                        + "and table_name <> 'flyway_schema_history'",
-                row -> {
-                    actual.put(row.getString("table_name"), row.getString("table_schema"));
-                });
+        Set<String> actual = new TreeSet<>(jdbc.queryForList("select table_schema || '.' || table_name "
+                        + "from information_schema.tables where table_schema in " + SCHEMAS + " and table_type = 'BASE TABLE' "
+                        + "and table_name <> 'flyway_schema_history'", String.class));
 
-        assertEquals(new TreeMap<>(SCHEMA_OF), actual);
+        Set<String> expected = new TreeSet<>();
+        SCHEMA_OF.forEach((table, schema) -> expected.add(schema + "." + table));
+        SHARED_KERNEL.forEach(table -> {
+            expected.add("procurement." + table);
+            expected.add("public." + table);
+        });
+        assertEquals(expected, actual);
     }
 
     @Test
-    @DisplayName("schema: the application finds every table through its search_path, without naming a schema")
-    void searchPathReachesEveryServiceSchema() {
+    // Outside the test's transaction: a refused statement would abort it, and the next ones with it.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DisplayName("schema: the search_path reaches procurement's tables and its shared kernel, and no other service's")
+    void searchPathReachesProcurementOnly() {
         String searchPath = jdbc.queryForObject("show search_path", String.class);
 
-        assertEquals("public, identity, masterdata, procurement, finance, analytics", searchPath);
-        for (String table : SCHEMA_OF.keySet()) {
-            assertNotNull(jdbc.queryForObject("select count(*) from " + table, Long.class), table);
+        assertEquals("procurement", searchPath);
+        SCHEMA_OF.forEach((table, schema) -> {
+            if (schema.equals("procurement")) {
+                assertNotNull(jdbc.queryForObject("select count(*) from " + table, Long.class), table);
+            } else {
+                assertThrows(BadSqlGrammarException.class,
+                        () -> jdbc.queryForObject("select count(*) from " + table, Long.class), table);
+            }
+        });
+        for (String table : SHARED_KERNEL) {
+            assertEquals("procurement", jdbc.queryForObject("select table_schema from information_schema.tables "
+                    + "where table_name = ? and table_schema = current_schema()", String.class, table), table);
         }
     }
 

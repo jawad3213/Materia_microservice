@@ -134,6 +134,13 @@ resource "random_password" "service_client_analytics" {
   special = false # the value goes through a docker compose .env file
 }
 
+# Each service's database user (aws/deploy/db/service-roles.sql): it owns its schema and nothing else.
+resource "random_password" "db_service" {
+  for_each = toset(["identity", "masterdata", "procurement", "finance", "analytics"])
+  length   = 32
+  special  = false # the value goes through a docker compose .env file
+}
+
 # Grafana's admin account (aws/deploy/docker-compose.yml); Grafana is reached through an SSM port forward only.
 resource "random_password" "grafana_admin" {
   length  = 32
@@ -175,6 +182,11 @@ module "app_parameters" {
       SERVICE_CLIENT_MASTERDATA_SECRET = random_password.service_client_masterdata.result
       SERVICE_CLIENT_FINANCE_SECRET    = random_password.service_client_finance.result
       SERVICE_CLIENT_ANALYTICS_SECRET  = random_password.service_client_analytics.result
+      DB_PASSWORD_IDENTITY             = random_password.db_service["identity"].result
+      DB_PASSWORD_MASTERDATA           = random_password.db_service["masterdata"].result
+      DB_PASSWORD_PROCUREMENT          = random_password.db_service["procurement"].result
+      DB_PASSWORD_FINANCE              = random_password.db_service["finance"].result
+      DB_PASSWORD_ANALYTICS            = random_password.db_service["analytics"].result
     },
     local.bootstrap_admin.secrets,
     var.extra_secrets,

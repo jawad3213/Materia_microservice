@@ -52,9 +52,8 @@ class DocumentFxValuationIT extends AbstractIntegrationTest {
     @DisplayName("documents: a confirmed EUR order is valued at the rate of its order date; a draft is not")
     void backfill_valuesCommittedOrders() {
         history.save(new StoredRate(ORDER_DATE.minusDays(1), CurrencyCode.EUR, CurrencyCode.MAD, new BigDecimal("11.00"), FxValuation.LIVE));
+        // A supplier of master data's, which an order names by id only.
         UUID supplier = UUID.randomUUID();
-        jdbc.update("insert into suppliers (id, code, name, status, currency_code, created_at, version) "
-                + "values (?, ?, 'Euro Parts', 'ACTIVE', 'EUR', now(), 0)", supplier, "SUP-FX-" + supplier.toString().substring(0, 8));
         UUID confirmed = order(supplier, "CONFIRMED", "80.00");
         UUID draft = order(supplier, "DRAFT", "50.00");
 

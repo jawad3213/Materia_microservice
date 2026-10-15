@@ -1,5 +1,6 @@
 package com.materia.grpc.auth;
 
+import com.materia.proto.audit.v1.ChangeHistoryGrpc;
 import com.materia.proto.finance.v1.FinanceMetricsGrpc;
 import com.materia.proto.identity.v1.ServiceTokensGrpc;
 import com.materia.proto.identity.v1.UserDirectoryGrpc;
@@ -44,7 +45,7 @@ class GrpcPoliciesTest {
             MaterialCatalogGrpc.getServiceDescriptor(), MasterDataMetricsGrpc.getServiceDescriptor(),
             PurchaseOrderLookupGrpc.getServiceDescriptor(), GoodsReceiptLookupGrpc.getServiceDescriptor(),
             ReplenishmentGrpc.getServiceDescriptor(), ProcurementMetricsGrpc.getServiceDescriptor(),
-            FinanceMetricsGrpc.getServiceDescriptor());
+            FinanceMetricsGrpc.getServiceDescriptor(), ChangeHistoryGrpc.getServiceDescriptor());
 
     /** Tokens of the test callers. */
     private static final Map<String, Caller> CALLERS = Map.of(

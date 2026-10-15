@@ -2,6 +2,7 @@ package com.materia.backend.common.audit.infrastructure.web;
 
 import com.materia.backend.common.audit.infrastructure.AuditedTypes;
 import com.materia.backend.common.infrastructure.web.CsvWriter;
+import com.materia.backend.common.audit.application.AuditFeed;
 import com.materia.backend.common.audit.application.AuditLogReader;
 import com.materia.backend.common.audit.application.AuditLogReader.AuditEntry;
 import org.springframework.http.ResponseEntity;
@@ -32,9 +33,11 @@ public class AuditController {
 
 
     private final AuditLogReader reader;
+    private final AuditFeed feed;
 
-    public AuditController(AuditLogReader reader) {
+    public AuditController(AuditLogReader reader, AuditFeed feed) {
         this.reader = reader;
+        this.feed = feed;
     }
 
     /** What happened to a record (and its lines), newest first: who, when, which fields, and why. */
@@ -59,7 +62,7 @@ public class AuditController {
     public ResponseEntity<List<AuditEntry>> recent(@RequestParam(required = false) String entityType,
                                                    @RequestParam(required = false) String actorId,
                                                    @RequestParam(defaultValue = "100") int limit) {
-        return ResponseEntity.ok(reader.recent(entityType, actorId, Math.max(1, Math.min(limit, MAX_ENTRIES))));
+        return ResponseEntity.ok(feed.recent(entityType, actorId, Math.max(1, Math.min(limit, MAX_ENTRIES))));
     }
 
     /** The same feed as a CSV download (log:export), up to 5000 changes. */
@@ -70,7 +73,7 @@ public class AuditController {
                                          @RequestParam(defaultValue = "1000") int limit) {
         CsvWriter csv = new CsvWriter().row("Date", "User", "User id", "Record type", "Record id", "Document type",
                 "Document id", "Action", "Summary", "Reason", "Changes");
-        for (AuditEntry e : reader.recent(entityType, actorId, Math.max(1, Math.min(limit, MAX_EXPORT)))) {
+        for (AuditEntry e : feed.recent(entityType, actorId, Math.max(1, Math.min(limit, MAX_EXPORT)))) {
             csv.row(e.occurredAt(), e.actorName(), e.actorId(), e.entityType(), e.entityId(), e.parentType(), e.parentId(),
                     e.action(), e.summary(), e.reason(), changes(e));
         }

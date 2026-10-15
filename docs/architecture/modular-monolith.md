@@ -53,10 +53,13 @@ Configuration: `GATEWAY_BACKEND_URI` (the monolith's address), `GATEWAY_JWKS_URI
 JWK set), `GATEWAY_RATE_LIMIT_*`. CORS stays in the monolith for now. In the browser the API is same-origin through
 nginx, so only the Vite dev server (calling the backend directly) needs it.
 
-## One schema per service
+## One database per service
 
-Each service's tables live in its own PostgreSQL schema (`V13__schema_per_service.sql`); the shared kernel's tables
-stay in `public` while every context runs in one application.
+Each service's data lives in its own PostgreSQL schema (`V13__schema_per_service.sql`), with its own copy of the
+shared kernel's tables (phase 6: each service's "shared kernel tables" migration, which copied the rows that belong to
+it from the `public` tables every service shared before). A service connects as its own database user, which owns its
+schema and nothing else (`aws/deploy/db/service-roles.sql`), and sees only that schema. Moving a service to a
+database server of its own is a dump of its schema.
 
 | Schema | Tables |
 |---|---|
@@ -65,12 +68,18 @@ stay in `public` while every context runs in one application.
 | `procurement` | purchase_requisitions(+lines), purchase_orders(+lines), goods_receipts(+lines), return_to_vendor(+lines) |
 | `finance` | invoices(+lines), payments(+lines), app_settings |
 | `analytics` | none yet |
-| `public` (shared kernel) | global_code_sequences, outbox_messages, processed_events, audit_log, exchange_rates, attachments |
+| each of the above | its own shared kernel: global_code_sequences, outbox_messages, processed_events, audit_log, exchange_rates, attachments |
+| `public` | the legacy shared tables (no service reads them) and procurement's migrations' history |
 
 - Every entity of a context names its service's schema (`@Table(name = "users", schema = "identity")`);
   `EntitySchemaTest` fails the build when one does not. The shared kernel's entities name none.
-- Native SQL names no schema: every connection runs `SET search_path TO public, identity, masterdata, procurement,
-  finance, analytics` (`spring.datasource.hikari.connection-init-sql`). An extracted service lists only its own.
+- Native SQL and the shared kernel's entities name no schema: each service's connection runs `SET search_path TO
+  <its schema>` (`spring.datasource.hikari.connection-init-sql`), and nothing else.
+- Each service relays its own outbox to Kafka, keeps its own change history (the audit log page's feed is composed
+  by analytics over `audit.v1.ChangeHistory`), its own attachments (the gateway routes attachment requests by owner
+  type) and its own exchange rates (refreshed daily by procurement, finance and analytics).
+- On EC2, `deploy.sh` applies the database users before the services start and again once procurement migrated (on
+  a new database, procurement's legacy migrations still create every context's tables before moving them).
 - No foreign key crosses two schemas (`SchemaPerServiceMigrationIT` checks it on a migrated database).
 - New migrations name the schema of every table they touch (`alter table finance.invoices ...`).
 - Rolling back to an image older than V13: run `db/rollback/V13__undo_schema_per_service.sql` first (it puts every
@@ -233,11 +242,10 @@ raises replenishment requisitions in procurement with a command (`procurement.v1
 
 ## Not done yet
 
-- **The extraction itself:** a build and image per service, gateway routing to them, and service-to-service
-  authentication. Each cross-context adapter (`infrastructure/adapters/out/<context>`) becomes a gRPC client; the
-  services and their tests do not change.
+- **Retiring the legacy tables in `public`:** once every environment has run each service's copy migration, a
+  procurement migration can drop them (no service reads them).
 - `RequisitionOutput.getLines()` still exposes requisition entities to the requisition web layer; other
   contexts must use `getLineSummaries()`.
 - **The dashboard's metrics** cross services through 32 fine-grained RPCs. When analytics is extracted, measure how
   many a dashboard load makes; an event-fed read model in analytics can replace the hottest ones.
-- **Dev seeders** call other contexts directly; each service will seed its own data.
+- **Local `docker compose`** connects every service as the admin user; only the `search_path` keeps it to its schema.

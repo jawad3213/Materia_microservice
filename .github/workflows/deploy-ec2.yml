@@ -121,14 +121,16 @@ jobs:
           INSTANCE_ID: ${{ steps.instance.outputs.id }}
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          # Shipped with the command: the compose stack, the deploy script and the monitoring configuration
+          # Shipped with the command: the compose stack, the deploy script, the services' database users and the
+          # monitoring configuration
           COMPOSE_B64=$(base64 -w0 aws/deploy/docker-compose.yml)
           DEPLOY_B64=$(base64 -w0 aws/deploy/deploy.sh)
           CHECK_B64=$(base64 -w0 aws/deploy/check-monitoring.sh)
+          ROLES_B64=$(base64 -w0 aws/deploy/db/service-roles.sql)
           MONITORING_B64=$(tar -czf - -C aws/deploy monitoring | base64 -w0)
           jq -n \
             --arg dir "$APP_DIR" --arg compose "$COMPOSE_B64" --arg deploy "$DEPLOY_B64" \
-            --arg check "$CHECK_B64" --arg monitoring "$MONITORING_B64" \
+            --arg check "$CHECK_B64" --arg roles "$ROLES_B64" --arg monitoring "$MONITORING_B64" \
             --arg run "PROJECT=$PROJECT ENVIRONMENT=$ENVIRONMENT AWS_REGION=$AWS_REGION REGISTRY=$REGISTRY IMAGE_TAG=$IMAGE_TAG APP_DIR=$APP_DIR $APP_DIR/deploy.sh" \
             '{
               commands: [
@@ -137,6 +139,7 @@ jobs:
                 "echo \($compose) | base64 -d > \($dir)/docker-compose.yml",
                 "echo \($deploy) | base64 -d > \($dir)/deploy.sh",
                 "echo \($check) | base64 -d > \($dir)/check-monitoring.sh",
+                "mkdir -p \($dir)/db && echo \($roles) | base64 -d > \($dir)/db/service-roles.sql",
                 "chmod 700 \($dir)/deploy.sh \($dir)/check-monitoring.sh",
                 "rm -rf \($dir)/monitoring && echo \($monitoring) | base64 -d | tar -xz -C \($dir)",
                 "chmod -R a+rX \($dir)/monitoring",

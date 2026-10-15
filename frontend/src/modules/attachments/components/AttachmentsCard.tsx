@@ -130,7 +130,7 @@ export default function AttachmentsCard({ ownerType, ownerId, defaultCategory = 
     const tab = window.open("", "_blank");
     setBusyId(attachment.id);
     try {
-      const res = await attachmentService.content(attachment.id);
+      const res = await attachmentService.content(attachment.ownerType, attachment.id);
       const url = URL.createObjectURL(res.data);
       if (tab) {
         tab.location.replace(url);
@@ -149,7 +149,7 @@ export default function AttachmentsCard({ ownerType, ownerId, defaultCategory = 
   const handleDownload = async (attachment: Attachment) => {
     setBusyId(attachment.id);
     try {
-      const res = await attachmentService.content(attachment.id);
+      const res = await attachmentService.content(attachment.ownerType, attachment.id);
       saveBlobUrl(URL.createObjectURL(res.data), attachment.fileName);
     } catch (err) {
       setError(getApiErrorMessage(err, "The file could not be downloaded."));
@@ -162,7 +162,7 @@ export default function AttachmentsCard({ ownerType, ownerId, defaultCategory = 
     if (!window.confirm(`Remove ${attachment.fileName}?`)) return;
     setBusyId(attachment.id);
     try {
-      await attachmentService.remove(attachment.id);
+      await attachmentService.remove(attachment.ownerType, attachment.id);
       setAttachments((current) => current.filter((a) => a.id !== attachment.id));
     } catch (err) {
       setError(getApiErrorMessage(err, "The file could not be removed."));

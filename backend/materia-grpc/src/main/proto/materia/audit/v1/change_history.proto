@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+// Served by every service that records a change history (identity, master data, procurement, finance): each keeps
+// its own (one database per service). Mirrors AuditLogReader.recent.
+package materia.audit.v1;
+
+option java_package = "com.materia.proto.audit.v1";
+option java_multiple_files = true;
+
+// Callers: analytics (the platform-wide feed of the audit log page and its CSV export, composed from every service).
+service ChangeHistory {
+  rpc RecentChanges(RecentChangesRequest) returns (RecentChangesResponse);
+}
+
+message RecentChangesRequest {
+  // Only changes to records of this type, e.g. "PurchaseOrder"
+  optional string entity_type = 1;
+  // Only changes made by this user (UUID)
+  optional string actor_id = 2;
+  int32 limit = 3;
+}
+
+message RecentChangesResponse {
+  // Newest first
+  repeated Change changes = 1;
+}
+
+// AuditLogReader's AuditEntry
+message Change {
+  string id = 1;
+  // ISO date-time
+  string occurred_at = 2;
+  string actor_id = 3;
+  optional string actor_name = 4;
+  string entity_type = 5;
+  string entity_id = 6;
+  optional string parent_type = 7;
+  optional string parent_id = 8;
+  string action = 9;
+  optional string summary = 10;
+  optional string reason = 11;
+  // Field name -> its value before and after
+  map<string, FieldChange> changes = 12;
+}
+
+// Values as JSON (a field may hold a text, a number, a date...); absent when null.
+message FieldChange {
+  optional string from_json = 1;
+  optional string to_json = 2;
+}
