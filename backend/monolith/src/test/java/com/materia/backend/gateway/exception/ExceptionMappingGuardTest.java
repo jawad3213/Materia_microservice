@@ -3,8 +3,6 @@ package com.materia.backend.gateway.exception;
 import com.materia.backend.common.application.exceptions.BusinessException;
 import com.materia.backend.common.application.exceptions.NotFoundException;
 import com.materia.backend.common.application.exceptions.ValidationException;
-import com.materia.backend.contexts.auth.domain.exceptions.*;
-import com.materia.backend.contexts.employee.domain.exceptions.*;
 import com.materia.backend.contexts.masterData.domain.exceptions.*;
 import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +33,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * context's own advice first ({@code @Order(HIGHEST_PRECEDENCE)}), {@link GlobalExceptionHandler} last.
  *
  * <p>Prevents recurrence of FINDING-005 (DuplicateMaterialCodeException -> 500),
- * FINDING-006 (AccountLockedException -> 500), and FINDING-007 (InvalidCredentialsException -> 500).
+ * FINDING-006 (AccountLockedException -> 500), and FINDING-007 (InvalidCredentialsException -> 500); the auth and
+ * employee exceptions (FINDING-006, -007) are guarded by identity-service's copy of this test.
  */
 class ExceptionMappingGuardTest {
 
@@ -87,21 +86,6 @@ class ExceptionMappingGuardTest {
             NotFoundException.class,
             ValidationException.class,
 
-            // Auth (US1)
-            AccountLockedException.class,
-            InvalidCredentialsException.class,
-            AuthenticationFailedException.class,
-            EmailAlreadyExistsException.class,
-            UserAlreadyExistsException.class,
-            UserNotFoundException.class,
-            InvalidTokenException.class,
-            TokenExpiredException.class,
-
-            // Employees (US4)
-            EmployeeNotFoundException.class,
-            EmployeeCodeAlreadyExistsException.class,
-            EmailAlreadyInUseException.class,
-
             // Catalogue & Materials (US3, US5)
             DuplicateMaterialCodeException.class,
             MaterialNotFoundException.class,
@@ -141,22 +125,6 @@ class ExceptionMappingGuardTest {
         Method resolved = resolver.resolveMethodByExceptionType(DuplicateMaterialCodeException.class);
         assertThat(resolved).isNotNull();
         assertThat(resolved.getName()).isEqualTo("handleDuplicateMaterialCodeException");
-    }
-
-    @Test
-    @DisplayName("exception guard: FINDING-006 AccountLockedException resolves to unauthorized handler")
-    void accountLockedException_doesNotMapTo500() {
-        Method resolved = resolver.resolveMethodByExceptionType(AccountLockedException.class);
-        assertThat(resolved).isNotNull();
-        assertThat(resolved.getName()).isEqualTo("handleAccountLockedException");
-    }
-
-    @Test
-    @DisplayName("exception guard: FINDING-007 InvalidCredentialsException resolves to unauthorized handler")
-    void invalidCredentialsException_doesNotMapTo500() {
-        Method resolved = resolver.resolveMethodByExceptionType(InvalidCredentialsException.class);
-        assertThat(resolved).isNotNull();
-        assertThat(resolved.getName()).isEqualTo("handleInvalidCredentialsException");
     }
 
     @Test

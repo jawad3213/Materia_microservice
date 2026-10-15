@@ -25,8 +25,12 @@
         <module>materia-grpc</module>
         <!-- What every service runs on: security chain, error handling, token keys, database and Kafka setup. -->
         <module>materia-platform</module>
+        <!-- The test infrastructure every service's tests share (test scope only). -->
+        <module>materia-test-support</module>
         <!-- Today's application: every context in one deployable, extracted service by service. -->
         <module>monolith</module>
+        <!-- Identity: accounts, sign-in, tokens and employees; the only signer of tokens. -->
+        <module>identity-service</module>
         <!-- The API gateway: the only way in from outside, in front of the services. -->
         <module>gateway-service</module>
     </modules>
@@ -71,6 +75,11 @@
             <dependency>
                 <groupId>com.materia</groupId>
                 <artifactId>materia-platform</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.materia</groupId>
+                <artifactId>materia-test-support</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <!-- Brought in by kafka-clients; 1.11.4 fixes a HIGH vulnerability of 1.10.1. -->

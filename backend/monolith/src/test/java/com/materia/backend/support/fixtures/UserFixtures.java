@@ -1,15 +1,11 @@
 package com.materia.backend.support.fixtures;
 
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.enums.Role;
-import com.materia.backend.contexts.auth.domain.enums.UserStatus;
-
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Fixture builder for User domain entity (T024, US1).
- * Supports role, enabled, status, and mustChangePassword configuration.
+ * Accounts for this application's tests. Identity holds the accounts, so these are what its directory tells about
+ * them ({@link TestAccount}); register one with {@link TestIdentity#save}.
  */
 public final class UserFixtures {
 
@@ -24,11 +20,11 @@ public final class UserFixtures {
 
     /** An active, enabled receiver: the only kind of user an order may be assigned to. */
     public static Builder aReceiver() {
-        return new Builder().role(Role.RECEIVER).firstName("Rita").lastName("Receiver");
+        return new Builder().role("RECEIVER").firstName("Rita").lastName("Receiver");
     }
 
     public static Builder anInactiveReceiver() {
-        return aReceiver().status(UserStatus.INACTIVE);
+        return aReceiver().status("INACTIVE");
     }
 
     public static Builder aDisabledReceiver() {
@@ -36,7 +32,7 @@ public final class UserFixtures {
     }
 
     public static Builder aPurchaser() {
-        return new Builder().role(Role.PURCHASER).firstName("Bob").lastName("Buyer");
+        return new Builder().role("PURCHASER").firstName("Bob").lastName("Buyer");
     }
 
     public static String uniqueEmail() {
@@ -46,37 +42,22 @@ public final class UserFixtures {
     public static final class Builder {
         private UUID id = UUID.randomUUID();
         private String email = uniqueEmail();
-        private String passwordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"; // "password"
-        private Role role = Role.PURCHASER;
+        private String role = "PURCHASER";
         private boolean enabled = true;
         private String firstName = "John";
         private String lastName = "Doe";
-        private UserStatus status = UserStatus.ACTIVE;
-        private boolean mustChangePassword = false;
+        private String status = "ACTIVE";
 
         public Builder id(UUID id) { this.id = id; return this; }
         public Builder email(String email) { this.email = email; return this; }
-        public Builder passwordHash(String passwordHash) { this.passwordHash = passwordHash; return this; }
-        public Builder role(Role role) { this.role = role; return this; }
+        public Builder role(String roleCode) { this.role = roleCode; return this; }
         public Builder enabled(boolean enabled) { this.enabled = enabled; return this; }
         public Builder firstName(String firstName) { this.firstName = firstName; return this; }
         public Builder lastName(String lastName) { this.lastName = lastName; return this; }
-        public Builder status(UserStatus status) { this.status = status; return this; }
-        public Builder mustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; return this; }
+        public Builder status(String statusCode) { this.status = statusCode; return this; }
 
-        public User build() {
-            return User.builder()
-                    .id(id)
-                    .email(email)
-                    .passwordHash(passwordHash)
-                    .role(role)
-                    .enabled(enabled)
-                    .firstName(firstName)
-                    .lastName(lastName)
-                    .fullName(firstName + " " + lastName)
-                    .status(status)
-                    .mustChangePassword(mustChangePassword)
-                    .build();
+        public TestAccount build() {
+            return new TestAccount(id, email, firstName, lastName, role, enabled, status);
         }
     }
 }

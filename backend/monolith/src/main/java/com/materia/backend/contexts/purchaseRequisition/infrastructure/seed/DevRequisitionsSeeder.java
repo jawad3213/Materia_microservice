@@ -1,8 +1,8 @@
 package com.materia.backend.contexts.purchaseRequisition.infrastructure.seed;
 
 import com.materia.backend.common.infrastructure.seed.DevSeed;
-import com.materia.backend.contexts.auth.application.dtos.UserSummary;
-import com.materia.backend.contexts.auth.domain.ports.in.UserDirectoryUseCase;
+import com.materia.backend.infrastructure.seed.DevUsers;
+import com.materia.backend.infrastructure.seed.DevUsers.SeedUser;
 import com.materia.backend.contexts.masterData.application.dtos.material.MaterialOutput;
 import com.materia.backend.contexts.masterData.domain.ports.in.MaterialUseCase;
 import com.materia.backend.contexts.purchaseRequisition.application.dtos.CreateRequisitionInput;
@@ -85,9 +85,9 @@ public class DevRequisitionsSeeder implements ApplicationRunner {
 
     private final RequisitionUseCase requisitions;
     private final MaterialUseCase materials;
-    private final UserDirectoryUseCase users;
+    private final DevUsers users;
 
-    public DevRequisitionsSeeder(RequisitionUseCase requisitions, MaterialUseCase materials, UserDirectoryUseCase users) {
+    public DevRequisitionsSeeder(RequisitionUseCase requisitions, MaterialUseCase materials, DevUsers users) {
         this.requisitions = requisitions;
         this.materials = materials;
         this.users = users;
@@ -99,8 +99,8 @@ public class DevRequisitionsSeeder implements ApplicationRunner {
             log.info("[DEV-SEED] Requisitions already present, nothing seeded");
             return;
         }
-        UserSummary purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
-        UserSummary admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
+        SeedUser purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
+        SeedUser admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
         List<MaterialOutput> orderable = materials.getAll().stream()
                 .filter(m -> "ACTIVE".equals(m.getStatus()) && "MAD".equalsIgnoreCase(m.getCurrencyCode()))
                 .filter(m -> m.getSupplierId() != null)
@@ -165,7 +165,7 @@ public class DevRequisitionsSeeder implements ApplicationRunner {
         return best.subList(0, Math.min(2, best.size()));
     }
 
-    private static CreateRequisitionInput input(Theme theme, String title, int index, UserSummary purchaser,
+    private static CreateRequisitionInput input(Theme theme, String title, int index, SeedUser purchaser,
                                                 List<MaterialOutput> lines) {
         LocalDate needed = LocalDate.now().plusDays(7 + (index * 11) % 50);
         CreateRequisitionInput input = new CreateRequisitionInput();

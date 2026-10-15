@@ -42,6 +42,11 @@
             <groupId>io.grpc</groupId>
             <artifactId>grpc-inprocess</artifactId>
         </dependency>
+        <!-- The network transport to the extracted services (identity) -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+        </dependency>
 
         <!-- Spring Boot Starter Data JPA -->
         <dependency>
@@ -140,6 +145,13 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- The test infrastructure the services share (integration-test base, Docker rule, test keys...) -->
+        <dependency>
+            <groupId>com.materia</groupId>
+            <artifactId>materia-test-support</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <!-- Spring Boot Starter Test -->

@@ -62,21 +62,26 @@ write_env() {
   log "Wrote .env ($(wc -l <.env) variables)"
 }
 
-backend_health() {
+health() {
   local id
-  id="$(docker compose ps -q backend)"
+  id="$(docker compose ps -q "$1")"
   [ -n "$id" ] && docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id"
 }
 
+# The backend, then identity (which starts once the backend is healthy)
 wait_healthy() {
-  for _ in $(seq 1 60); do
-    case "$(backend_health || true)" in
-      healthy) return 0 ;;
-      unhealthy) return 1 ;;
-    esac
-    sleep 5
+  local service
+  for service in backend identity; do
+    for _ in $(seq 1 60); do
+      case "$(health "$service" || true)" in
+        healthy) continue 2 ;;
+        unhealthy) log "$service is unhealthy"; return 1 ;;
+      esac
+      sleep 5
+    done
+    log "$service did not become healthy in time"
+    return 1
   done
-  return 1
 }
 
 start() {
@@ -91,7 +96,7 @@ start() {
 
 report_images() {
   local service id image
-  for service in backend gateway frontend; do
+  for service in backend identity gateway frontend; do
     id="$(docker compose ps -q "$service")"
     [ -n "$id" ] || continue
     image="$(docker inspect --format '{{.Image}}' "$id")"

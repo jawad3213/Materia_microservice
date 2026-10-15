@@ -63,10 +63,11 @@ services:
       APP_MESSAGING_TYPE: ${APP_MESSAGING_TYPE}
       # With APP_MESSAGING_TYPE=kafka: the outbox relay publishes committed events to materia.<context>.events.
       APP_OUTBOX_RELAY_ENABLED: ${APP_OUTBOX_RELAY_ENABLED:-false}
-      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      # Verifies tokens only: identity alone signs them, and issues this service's own service tokens.
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
-      APP_BOOTSTRAP_ADMIN_EMAIL: ${APP_BOOTSTRAP_ADMIN_EMAIL:-}
-      APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:-}
+      SERVICE_CLIENT_ID: monolith
+      SERVICE_CLIENT_SECRET: ${SERVICE_CLIENT_MONOLITH_SECRET}
+      GRPC_IDENTITY_TARGET: identity:9091
     volumes:
       - attachments_data:/app/data/attachments
     depends_on:
@@ -78,8 +79,38 @@ services:
       - materia-net
 
   # -----------------------------------------------------------------
+  # Identity: sign-in, accounts, employees; the only signer of tokens.
+  # REST on 8082 (through the gateway), gRPC identity.v1 on 9091 (for the other services).
+  # Needs the shared tables the backend's migrations create: started after it, and restarted until they exist.
+  # Build its jar first: cd backend && ./mvnw -pl identity-service -am package -DskipTests
+  # -----------------------------------------------------------------
+  identity:
+    build:
+      context: ./backend/identity-service
+      dockerfile: Dockerfile
+    container_name: materia-identity
+    restart: on-failure
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      SERVICE_CLIENT_MONOLITH_SECRET: ${SERVICE_CLIENT_MONOLITH_SECRET}
+      APP_BOOTSTRAP_ADMIN_EMAIL: ${APP_BOOTSTRAP_ADMIN_EMAIL:-}
+      APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - materia-net
+
+  # -----------------------------------------------------------------
   # API Gateway (Spring Cloud Gateway): the only way in to the services.
-  # Routes /api to the backend, refuses invalid tokens, rate-limits clients.
+  # Routes /api/v1/auth, /api/v1/employees and the JWK set to identity, the rest of /api to the backend;
+  # refuses invalid tokens, rate-limits clients.
   # Build its jar first: cd backend && ./mvnw -pl gateway-service -am package -DskipTests
   # -----------------------------------------------------------------
   gateway:
@@ -89,8 +120,11 @@ services:
     container_name: materia-gateway
     environment:
       GATEWAY_BACKEND_URI: http://backend:8080
+      GATEWAY_IDENTITY_URI: http://identity:8082
     depends_on:
       backend:
+        condition: service_started
+      identity:
         condition: service_started
     networks:
       - materia-net

@@ -2,8 +2,8 @@ package com.materia.backend.contexts.returnToVendor;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptOutput;
@@ -47,7 +47,7 @@ class ReturnToVendorFlowIT extends AbstractIntegrationTest {
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private ReturnToVendorUseCase returns;
     @Autowired private MaterialRepository materials;
-    @Autowired private UserRepository users;
+    @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
     private Material material;
@@ -63,7 +63,7 @@ class ReturnToVendorFlowIT extends AbstractIntegrationTest {
     /** An order of 10 at 5.00 MAD, received in full with 4 rejected. Returns the completed receipt. */
     private GoodsReceiptOutput receivedWithRejects() {
         material = materials.save(aMaterial().stock(0).build());
-        User receiver = users.save(aReceiver().build());
+        TestAccount receiver = users.save(aReceiver().build());
         receiverId = receiver.getId().toString();
 
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();

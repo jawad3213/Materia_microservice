@@ -1,7 +1,5 @@
 package com.materia.backend.domain;
 
-import com.materia.backend.contexts.employee.application.services.EmployeeCodeGeneratorService;
-import com.materia.backend.contexts.employee.domain.valueObjects.EmployeeCode;
 import com.materia.backend.contexts.goodsReceipt.application.services.GoodsReceiptCodeGeneratorService;
 import com.materia.backend.contexts.goodsReceipt.domain.valueObjects.ReceiptCode;
 import com.materia.backend.contexts.invoice.application.services.InvoiceCodeGeneratorService;
@@ -176,11 +174,5 @@ class YearBasedCodeGenerationTest {
         CategoryCodeGeneratorService catService = new CategoryCodeGeneratorService(repo);
         String cat1 = catService.generateCode();
         assertEquals(String.format("CAT-%d-0001", currentYear), cat1);
-
-        EmployeeCodeGeneratorService empService = new EmployeeCodeGeneratorService(repo);
-        EmployeeCode emp1 = empService.generateCode();
-        assertEquals("EMP-0001", emp1.getValue());
-        EmployeeCode emp2 = empService.generateCode();
-        assertEquals("EMP-0002", emp2.getValue());
     }
 }

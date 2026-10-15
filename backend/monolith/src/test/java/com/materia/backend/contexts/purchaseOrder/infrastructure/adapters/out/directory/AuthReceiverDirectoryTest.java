@@ -1,54 +1,42 @@
 package com.materia.backend.contexts.purchaseOrder.infrastructure.adapters.out.directory;
 
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.enums.Role;
-import com.materia.backend.contexts.auth.application.services.UserDirectoryService;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
-import com.materia.backend.contexts.auth.infrastructure.adapters.in.grpc.UserDirectoryGrpcService;
-import com.materia.backend.support.fixtures.InProcessGrpc;
-import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import com.materia.backend.contexts.purchaseOrder.domain.ports.out.ReceiverDirectory;
+import com.materia.backend.support.fixtures.InProcessGrpc;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestUserDirectory;
+import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
 import java.util.List;
-import java.util.Optional;
 
 import static com.materia.backend.support.fixtures.UserFixtures.aDisabledReceiver;
 import static com.materia.backend.support.fixtures.UserFixtures.aPurchaser;
 import static com.materia.backend.support.fixtures.UserFixtures.aReceiver;
 import static com.materia.backend.support.fixtures.UserFixtures.anInactiveReceiver;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.when;
 
 /** [T044] Only active, enabled receivers can be listed or assigned (US4-7, US4-9). */
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class AuthReceiverDirectoryTest {
 
-    @Mock private UserRepository users;
-
+    private TestUserDirectory users;
     private AuthReceiverDirectory directory;
 
     @BeforeEach
     void setUp() {
-        directory = new AuthReceiverDirectory(UserDirectoryGrpc.newBlockingStub(
-                InProcessGrpc.serving(new UserDirectoryGrpcService(new UserDirectoryService(users)))));
+        users = new TestUserDirectory();
+        directory = new AuthReceiverDirectory(UserDirectoryGrpc.newBlockingStub(InProcessGrpc.serving(users)));
     }
 
     @Test
     @DisplayName("list: only enabled, active receivers are listed, sorted by name")
     void list_onlyActiveEnabledReceivers_sorted() {
-        User zoe = aReceiver().firstName("Zoe").lastName("Z").build();
-        User amy = aReceiver().firstName("Amy").lastName("A").build();
-        when(users.findByRole(Role.RECEIVER)).thenReturn(List.of(zoe, anInactiveReceiver().build(),
-                aDisabledReceiver().build(), amy));
+        users.save(aReceiver().firstName("Zoe").lastName("Z").build());
+        TestAccount amy = users.save(aReceiver().firstName("Amy").lastName("A").build());
+        users.save(anInactiveReceiver().build());
+        users.save(aDisabledReceiver().build());
+        users.save(aPurchaser().build());
 
         List<ReceiverDirectory.Receiver> receivers = directory.findAssignableReceivers();
 
@@ -60,8 +48,7 @@ class AuthReceiverDirectoryTest {
     @Test
     @DisplayName("lookup: an active receiver is found by id")
     void lookup_activeReceiver_isFound() {
-        User rita = aReceiver().build();
-        when(users.findById(rita.getId())).thenReturn(Optional.of(rita));
+        TestAccount rita = users.save(aReceiver().build());
 
         assertEquals(rita.getFullName(), directory.findAssignableReceiver(rita.getId().toString()).orElseThrow().name());
     }
@@ -69,8 +56,8 @@ class AuthReceiverDirectoryTest {
     @Test
     @DisplayName("lookup: purchasers, inactive and disabled receivers cannot be assigned (US4-7)")
     void lookup_nonAssignableUsers_areRejected() {
-        for (User user : List.of(aPurchaser().build(), anInactiveReceiver().build(), aDisabledReceiver().build())) {
-            when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        for (TestAccount user : List.of(aPurchaser().build(), anInactiveReceiver().build(), aDisabledReceiver().build())) {
+            users.save(user);
             assertTrue(directory.findAssignableReceiver(user.getId().toString()).isEmpty(), user.getEmail());
         }
     }
@@ -87,8 +74,7 @@ class AuthReceiverDirectoryTest {
     @Test
     @DisplayName("name: a receiver without a full name is shown by email")
     void name_fallsBackToEmail() {
-        User nameless = aReceiver().firstName("").lastName("").build();
-        when(users.findByRole(Role.RECEIVER)).thenReturn(List.of(nameless));
+        TestAccount nameless = users.save(aReceiver().firstName("").lastName("").build());
 
         String shown = directory.findAssignableReceivers().get(0).name();
 

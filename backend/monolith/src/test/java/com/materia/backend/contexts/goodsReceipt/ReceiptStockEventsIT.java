@@ -2,8 +2,8 @@ package com.materia.backend.contexts.goodsReceipt;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineOutput;
@@ -45,11 +45,11 @@ class ReceiptStockEventsIT extends AbstractIntegrationTest {
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private MaterialRepository materials;
-    @Autowired private UserRepository users;
+    @Autowired private TestIdentity users;
     @Autowired private JdbcTemplate jdbc;
 
     private Material material;
-    private User receiver;
+    private TestAccount receiver;
     private UUID orderId;
     private UUID receiptId;
 
@@ -69,8 +69,7 @@ class ReceiptStockEventsIT extends AbstractIntegrationTest {
             jdbc.update("delete from outbox_messages where aggregate_id = ?", material.getId().toString());
         }
         if (receiver != null) {
-            jdbc.update("delete from users where id = ?", receiver.getId());
-            jdbc.update("delete from outbox_messages where aggregate_id = ?", receiver.getId().toString());
+            users.remove(receiver.getId());
         }
         jdbc.update("delete from processed_events where processed_at > now() - interval '10 minutes' "
                 + "and consumer in ('masterData.stock-on-order', 'masterData.received-goods-stock', "

@@ -1,6 +1,5 @@
 package com.materia.backend.architecture;
 
-import com.materia.backend.contexts.auth.domain.ports.in.UserDirectoryUseCase;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptLookupUseCase;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptMetricsUseCase;
 import com.materia.backend.contexts.invoice.domain.ports.in.InvoiceMetricsUseCase;
@@ -13,7 +12,6 @@ import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.Replenis
 import com.materia.backend.contexts.purchaseRequisition.domain.ports.in.RequisitionMetricsUseCase;
 import com.materia.backend.contexts.returnToVendor.domain.ports.in.ReturnMetricsUseCase;
 import com.materia.proto.finance.v1.FinanceMetricsGrpc;
-import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
 import com.materia.proto.procurement.v1.GoodsReceiptLookupGrpc;
@@ -43,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Each gRPC contract (materia-grpc) mirrors the public use cases another service calls, method for method. A method
  * added to one of these use cases needs its RPC, or an explicit reason to stay off the contract; an RPC needs the
- * method it serves.
+ * method it serves. Identity's contracts are checked by identity-service.
  */
 class GrpcContractsTest {
 
@@ -56,11 +54,6 @@ class GrpcContractsTest {
 
     static Stream<Arguments> contracts() {
         return Stream.of(
-                Arguments.of(UserDirectoryGrpc.getServiceDescriptor(), List.of(
-                        new Mirror(UserDirectoryUseCase.class,
-                                Map.of("findUser", "FindUser", "findUsersWithRole", "FindUsersWithRole"),
-                                // No other service looks accounts up by email.
-                                Set.of("findUserByEmail")))),
                 Arguments.of(MaterialCatalogGrpc.getServiceDescriptor(), List.of(
                         new Mirror(MaterialInventoryUseCase.class,
                                 Map.of("findMaterial", "FindMaterial", "findMaterialByCode", "FindMaterialByCode"),

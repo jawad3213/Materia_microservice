@@ -36,8 +36,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The gateway in front of a stand-in service that publishes a JWK set and records what reaches it: what is routed,
- * what is refused before the service sees it, and what the service receives.
+ * The gateway in front of two stand-in services, the monolith and Identity (which publishes the JWK set), that record
+ * what reaches them: what is routed where, what is refused before a service sees it, and what a service receives.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "management.server.port=0",
@@ -48,18 +48,21 @@ class GatewayTest {
     private static final KeyPair OTHER_KEYS = rsa();
     private static final String KEY_ID = "test-key";
 
-    /** Requests the stand-in service received, with the headers that matter. */
+    /** Requests the stand-in services received, with which one and the headers that matter. */
     private static final List<Map<String, String>> RECEIVED = new CopyOnWriteArrayList<>();
-    private static final HttpServer SERVICE = service();
+    private static final HttpServer BACKEND = service("backend");
+    private static final HttpServer IDENTITY = service("identity");
 
     @DynamicPropertySource
     static void routes(DynamicPropertyRegistry registry) {
-        registry.add("gateway.backend-uri", () -> "http://localhost:" + SERVICE.getAddress().getPort());
+        registry.add("gateway.backend-uri", () -> "http://localhost:" + BACKEND.getAddress().getPort());
+        registry.add("gateway.identity-uri", () -> "http://localhost:" + IDENTITY.getAddress().getPort());
     }
 
     @AfterAll
     static void stop() {
-        SERVICE.stop(0);
+        BACKEND.stop(0);
+        IDENTITY.stop(0);
     }
 
     @Autowired private WebTestClient client;
@@ -79,14 +82,17 @@ class GatewayTest {
         }
     }
 
-    private static HttpServer service() {
+    private static HttpServer service(String name) {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
-            String jwks = new JWKSet(new RSAKey.Builder((RSAPublicKey) KEYS.getPublic()).keyID(KEY_ID).build())
-                    .toString();
-            server.createContext("/.well-known/jwks.json", exchange -> reply(exchange, 200, jwks));
+            if (name.equals("identity")) {
+                String jwks = new JWKSet(new RSAKey.Builder((RSAPublicKey) KEYS.getPublic()).keyID(KEY_ID).build())
+                        .toString();
+                server.createContext("/.well-known/jwks.json", exchange -> reply(exchange, 200, jwks));
+            }
             server.createContext("/api/", exchange -> {
                 RECEIVED.add(Map.of(
+                        "service", name,
                         "path", exchange.getRequestURI().getPath(),
                         "authorization", String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")),
                         "trace", String.valueOf(exchange.getRequestHeaders().getFirst("X-Gateway-Trace-Id")),
@@ -149,7 +155,30 @@ class GatewayTest {
     void noToken_isRouted() {
         client.post().uri("/api/v1/auth/refresh").exchange().expectStatus().isOk();
 
-        assertThat(RECEIVED).extracting(r -> r.get("path")).containsExactly("/api/v1/auth/refresh");
+        assertThat(RECEIVED).extracting(r -> r.get("path") + " -> " + r.get("service"))
+                .containsExactly("/api/v1/auth/refresh -> identity");
+    }
+
+    @Test
+    @DisplayName("gateway: sign-in, accounts, employees and their history go to Identity, the rest to the monolith")
+    void identityPaths_goToIdentity() {
+        String token = validToken();
+        for (String path : List.of("/api/v1/auth/me", "/api/v1/employees", "/api/v1/employees/42",
+                "/api/v1/audit/Employee/42", "/api/v1/audit/User/42", "/api/v1/audit/Material/42", "/api/v1/audit",
+                "/api/v1/invoices", "/api/v1/authors")) {
+            client.get().uri(path).header("Authorization", "Bearer " + token).exchange().expectStatus().isOk();
+        }
+
+        assertThat(RECEIVED).extracting(r -> r.get("path") + " -> " + r.get("service")).containsExactly(
+                "/api/v1/auth/me -> identity",
+                "/api/v1/employees -> identity",
+                "/api/v1/employees/42 -> identity",
+                "/api/v1/audit/Employee/42 -> identity",
+                "/api/v1/audit/User/42 -> identity",
+                "/api/v1/audit/Material/42 -> backend",
+                "/api/v1/audit -> backend",
+                "/api/v1/invoices -> backend",
+                "/api/v1/authors -> backend");
     }
 
     @Test

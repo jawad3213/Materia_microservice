@@ -5,18 +5,20 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * Where the gateway sends requests and how it checks them ({@code gateway.*}).
  *
- * @param backendUri the service the REST API is routed to; today the monolith, later one entry per service
- * @param jwksUri    Identity's published token key (JWK set)
- * @param rateLimit  per-client request budgets
+ * @param backendUri  the monolith: the REST API no extracted service answers
+ * @param identityUri Identity (sign-in, accounts, employees, the token key); the monolith when not set
+ * @param jwksUri     Identity's published token key (JWK set); Identity's own when not set
+ * @param rateLimit   per-client request budgets
  */
 @ConfigurationProperties(prefix = "gateway")
-public record GatewayProperties(String backendUri, String jwksUri, RateLimit rateLimit) {
+public record GatewayProperties(String backendUri, String identityUri, String jwksUri, RateLimit rateLimit) {
 
     public GatewayProperties {
         if (backendUri == null || backendUri.isBlank()) {
             throw new IllegalStateException("gateway.backend-uri is not set");
         }
-        if (jwksUri == null || jwksUri.isBlank()) jwksUri = backendUri + "/.well-known/jwks.json";
+        if (identityUri == null || identityUri.isBlank()) identityUri = backendUri;
+        if (jwksUri == null || jwksUri.isBlank()) jwksUri = identityUri + "/.well-known/jwks.json";
         if (rateLimit == null) rateLimit = new RateLimit(true, 120, 10, 60);
     }
 

@@ -3,8 +3,8 @@ package com.materia.backend.contexts.purchaseOrder.infrastructure.seed;
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
 import com.materia.backend.common.infrastructure.seed.DevSeed;
-import com.materia.backend.contexts.auth.application.dtos.UserSummary;
-import com.materia.backend.contexts.auth.domain.ports.in.UserDirectoryUseCase;
+import com.materia.backend.infrastructure.seed.DevUsers;
+import com.materia.backend.infrastructure.seed.DevUsers.SeedUser;
 import com.materia.backend.contexts.masterData.application.dtos.material.MaterialOutput;
 import com.materia.backend.contexts.masterData.application.dtos.material.MaterialReference;
 import com.materia.backend.contexts.masterData.application.dtos.supplier.SupplierOutput;
@@ -60,11 +60,11 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
     private final MaterialUseCase materials;
     private final MaterialInventoryUseCase inventory;
     private final SupplierUseCase suppliers;
-    private final UserDirectoryUseCase users;
+    private final DevUsers users;
 
     public DevPurchaseOrdersSeeder(PurchaseOrderUseCase orders, RequisitionUseCase requisitions,
                                    MaterialUseCase materials, MaterialInventoryUseCase inventory,
-                                   SupplierUseCase suppliers, UserDirectoryUseCase users) {
+                                   SupplierUseCase suppliers, DevUsers users) {
         this.orders = orders;
         this.requisitions = requisitions;
         this.materials = materials;
@@ -79,9 +79,9 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
             log.info("[DEV-SEED] Purchase orders already present, nothing seeded");
             return;
         }
-        UserSummary purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
-        UserSummary admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
-        UserSummary receiver = users.findUserByEmail(DevSeed.RECEIVER_EMAIL).orElse(null);
+        SeedUser purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
+        SeedUser admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
+        SeedUser receiver = users.findUserByEmail(DevSeed.RECEIVER_EMAIL).orElse(null);
         List<List<MaterialOutput>> bySupplier = orderableMaterialsBySupplier();
         if (purchaser == null || admin == null || receiver == null || bySupplier.isEmpty()) {
             log.warn("[DEV-SEED] No purchase order seeded: the dev accounts or orderable materials are missing");
@@ -121,7 +121,7 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
         log.info("[DEV-SEED] Created {} purchase orders ({} converted from requisitions)", created, converted);
     }
 
-    private void moveTo(Stage stage, UUID order, UserSummary purchaser, UserSummary admin, UserSummary receiver) {
+    private void moveTo(Stage stage, UUID order, SeedUser purchaser, SeedUser admin, SeedUser receiver) {
         String buyer = purchaser.id().toString();
         String manager = admin.id().toString();
         switch (stage) {
@@ -136,7 +136,7 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
         }
     }
 
-    private void makeReady(UUID order, UserSummary purchaser, UserSummary admin, UserSummary receiver) {
+    private void makeReady(UUID order, SeedUser purchaser, SeedUser admin, SeedUser receiver) {
         String manager = admin.id().toString();
         orders.submit(order, purchaser.id().toString());
         orders.confirm(order, manager);
@@ -147,7 +147,7 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
      * Orders exactly what the requisition asks for, at the materials' standard prices. Dated today: the requisition was
      * only approved today.
      */
-    private UUID orderRequisition(RequisitionOutput requisition, UserSummary purchaser, int index) {
+    private UUID orderRequisition(RequisitionOutput requisition, SeedUser purchaser, int index) {
         List<RequisitionLineSummary> requested = requisition.getLineSummaries();
         CreatePurchaseOrderInput input = header(requested.get(0).supplierId(), purchaser, LocalDate.now(), index);
         input.setRequisitionId(requisition.getId());
@@ -164,7 +164,7 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
     }
 
     /** An order without requisition, placed in the last weeks: the oldest first, one every two days. */
-    private UUID directOrder(List<MaterialOutput> materialsOfSupplier, int direct, UserSummary purchaser) {
+    private UUID directOrder(List<MaterialOutput> materialsOfSupplier, int direct, SeedUser purchaser) {
         LocalDate orderDate = DevSeed.daysAgo(Math.max(1, 45 - direct * 2));
         CreatePurchaseOrderInput input = header(UUID.fromString(materialsOfSupplier.get(0).getSupplierId()), purchaser,
                 orderDate, direct);
@@ -191,7 +191,7 @@ public class DevPurchaseOrdersSeeder implements ApplicationRunner {
     }
 
     /** An order placed on {@code orderDate}, delivered two to four weeks later. */
-    private CreatePurchaseOrderInput header(UUID supplierId, UserSummary purchaser, LocalDate orderDate, int index) {
+    private CreatePurchaseOrderInput header(UUID supplierId, SeedUser purchaser, LocalDate orderDate, int index) {
         SupplierOutput supplier = suppliers.getById(supplierId);
         CreatePurchaseOrderInput input = new CreatePurchaseOrderInput();
         input.setSupplierId(supplierId);

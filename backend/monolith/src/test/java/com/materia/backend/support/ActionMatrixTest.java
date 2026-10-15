@@ -1,6 +1,5 @@
 package com.materia.backend.support;
 
-import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.goodsReceipt.domain.enums.ReceiptStatus;
 import com.materia.backend.contexts.purchaseOrder.domain.enums.OrderStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -14,28 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** [T015] The shared action matrix is well-formed and matches the Java enums it describes. */
+/**
+ * [T015] The shared action matrix is well-formed and matches the Java enums it describes. Its roles are identity's
+ * Role, checked by identity-service (RoleActionMatrixTest).
+ */
 class ActionMatrixTest {
-
-    @Test
-    @DisplayName("action matrix: lists exactly the roles defined by Role")
-    void roles_matchRoleEnum() {
-        Set<String> expected = Arrays.stream(Role.values()).map(Enum::name).collect(Collectors.toSet());
-
-        assertEquals(expected, Set.copyOf(ActionMatrix.roles()));
-    }
-
-    @Test
-    @DisplayName("action matrix: each role's order and receipt permissions match Role.java")
-    void rolePermissions_matchRoleEnum() {
-        for (Role role : Role.values()) {
-            Set<String> fromEnum = role.getPermissions().stream()
-                    .filter(p -> p.startsWith("order:") || p.startsWith("receipt:"))
-                    .collect(Collectors.toSet());
-
-            assertEquals(fromEnum, ActionMatrix.permissions(role.name()), "permissions for " + role);
-        }
-    }
 
     @Test
     @DisplayName("action matrix: lists exactly the purchase order and goods receipt statuses")

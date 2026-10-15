@@ -2,8 +2,8 @@ package com.materia.backend.contexts.invoice.infrastructure.seed;
 
 import com.materia.backend.common.domain.valueObjects.Money;
 import com.materia.backend.common.infrastructure.seed.DevSeed;
-import com.materia.backend.contexts.auth.application.dtos.UserSummary;
-import com.materia.backend.contexts.auth.domain.ports.in.UserDirectoryUseCase;
+import com.materia.backend.infrastructure.seed.DevUsers;
+import com.materia.backend.infrastructure.seed.DevUsers.SeedUser;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineOutput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptOutput;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
@@ -53,9 +53,9 @@ public class DevInvoicesSeeder implements ApplicationRunner {
 
     private final InvoiceUseCase invoices;
     private final GoodsReceiptUseCase receipts;
-    private final UserDirectoryUseCase users;
+    private final DevUsers users;
 
-    public DevInvoicesSeeder(InvoiceUseCase invoices, GoodsReceiptUseCase receipts, UserDirectoryUseCase users) {
+    public DevInvoicesSeeder(InvoiceUseCase invoices, GoodsReceiptUseCase receipts, DevUsers users) {
         this.invoices = invoices;
         this.receipts = receipts;
         this.users = users;
@@ -67,8 +67,8 @@ public class DevInvoicesSeeder implements ApplicationRunner {
             log.info("[DEV-SEED] Invoices already present, nothing seeded");
             return;
         }
-        UserSummary purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
-        UserSummary admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
+        SeedUser purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
+        SeedUser admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
         if (purchaser == null || admin == null) {
             log.warn("[DEV-SEED] No invoice seeded: the dev accounts are missing");
             return;

@@ -2,8 +2,8 @@ package com.materia.backend.contexts.payment;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
@@ -54,7 +54,7 @@ class PaymentFlowIT extends AbstractIntegrationTest {
     @Autowired private InvoiceUseCase invoices;
     @Autowired private PaymentUseCase payments;
     @Autowired private MaterialRepository materials;
-    @Autowired private UserRepository users;
+    @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
     private void flushAndClear() {
@@ -65,7 +65,7 @@ class PaymentFlowIT extends AbstractIntegrationTest {
     /** A verified invoice of 32.00 MAD (6 × 5.00 + 2.00 tax) for an order of the given supplier. */
     private InvoiceOutput verifiedInvoice(UUID supplierId) {
         Material material = materials.save(aMaterial().stock(0).build());
-        User receiver = users.save(aReceiver().build());
+        TestAccount receiver = users.save(aReceiver().build());
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialId(material.getId());
         line.setMaterialCode(material.getCode().getValue());

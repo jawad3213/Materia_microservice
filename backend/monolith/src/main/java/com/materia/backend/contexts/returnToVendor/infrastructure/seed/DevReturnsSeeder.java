@@ -1,8 +1,8 @@
 package com.materia.backend.contexts.returnToVendor.infrastructure.seed;
 
 import com.materia.backend.common.infrastructure.seed.DevSeed;
-import com.materia.backend.contexts.auth.application.dtos.UserSummary;
-import com.materia.backend.contexts.auth.domain.ports.in.UserDirectoryUseCase;
+import com.materia.backend.infrastructure.seed.DevUsers;
+import com.materia.backend.infrastructure.seed.DevUsers.SeedUser;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineOutput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptOutput;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
@@ -53,9 +53,9 @@ public class DevReturnsSeeder implements ApplicationRunner {
 
     private final ReturnToVendorUseCase returns;
     private final GoodsReceiptUseCase receipts;
-    private final UserDirectoryUseCase users;
+    private final DevUsers users;
 
-    public DevReturnsSeeder(ReturnToVendorUseCase returns, GoodsReceiptUseCase receipts, UserDirectoryUseCase users) {
+    public DevReturnsSeeder(ReturnToVendorUseCase returns, GoodsReceiptUseCase receipts, DevUsers users) {
         this.returns = returns;
         this.receipts = receipts;
         this.users = users;
@@ -67,7 +67,7 @@ public class DevReturnsSeeder implements ApplicationRunner {
             log.info("[DEV-SEED] Returns already present, nothing seeded");
             return;
         }
-        UserSummary purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
+        SeedUser purchaser = users.findUserByEmail(DevSeed.PURCHASER_EMAIL).orElse(null);
         if (purchaser == null) {
             log.warn("[DEV-SEED] No return seeded: the dev purchaser is missing");
             return;

@@ -1,5 +1,6 @@
 package com.materia.backend.infrastructure.grpc;
 
+import com.materia.backend.common.domain.ports.out.UserDisplayNames;
 import com.materia.grpc.auth.AuthenticationServerInterceptor;
 import com.materia.grpc.auth.CallerTokenClientInterceptor;
 import com.materia.grpc.auth.TokenVerifier;
@@ -17,11 +18,13 @@ import com.materia.proto.procurement.v1.ProcurementMetricsGrpc;
 import com.materia.proto.procurement.v1.PurchaseOrderLookupGrpc;
 import com.materia.proto.procurement.v1.ReplenishmentGrpc;
 import io.grpc.BindableService;
+import io.grpc.ClientInterceptor;
 import io.grpc.ManagedChannel;
 import io.grpc.Server;
 import io.grpc.ServerInterceptors;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.SmartLifecycle;
@@ -33,21 +36,27 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Every call between the future services goes through its gRPC contract, inside this one application: each context
- * serves its contracts ({@code adapters/in/grpc}) on an in-process server, and the other contexts call them through
- * stubs on an in-process channel, with the interceptors every service installs (token, trace id, deadline, errors).
+ * Every call between the services goes through its gRPC contract.
  *
- * <p>Server and channel run calls on the caller's thread, so a call joins the caller's transaction exactly as the
- * direct call it replaced. Separate transactions come with the extraction itself, when each service gets its own
- * address: a stub then points at another channel and nothing else changes.
+ * <ul>
+ *   <li>The contexts still in this application serve their contracts ({@code adapters/in/grpc}) on an in-process
+ *   server and call each other through stubs on an in-process channel. Server and channel run calls on the caller's
+ *   thread, so a call joins the caller's transaction as the direct call it replaced.</li>
+ *   <li>Identity is a service of its own: its contracts (UserDirectory, ServiceTokens) are reached over the network
+ *   at {@code app.grpc.identity.target}, with a short deadline.</li>
+ * </ul>
+ *
+ * <p>Every channel installs the interceptors every service uses (caller token, trace id, deadline); the one to
+ * identity's ServiceTokens has no caller token, since asking for a service token must not need one.
  */
 @Configuration
 public class GrpcConfig {
+
+    private static final String IN_PROCESS_PREFIX = "in-process:";
 
     /** Unique per application context, so several test contexts can live in one JVM. */
     private final String serverName = "materia-" + UUID.randomUUID();
@@ -55,33 +64,63 @@ public class GrpcConfig {
     @Bean
     public InProcessGrpcServer grpcServer(List<BindableService> services, TokenVerifier verifier) {
         InProcessServerBuilder server = InProcessServerBuilder.forName(serverName).directExecutor();
-        // Issuing a service token is the one call made without a token.
-        AuthenticationServerInterceptor authentication = new AuthenticationServerInterceptor(verifier,
-                Set.of(ServiceTokensGrpc.getIssueServiceTokenMethod().getFullMethodName()));
+        AuthenticationServerInterceptor authentication = new AuthenticationServerInterceptor(verifier);
         // The last interceptor runs first: trace id, then authentication, then error translation around the handler.
         services.forEach(service -> server.addService(ServerInterceptors.intercept(service,
                 new ExceptionTranslatingServerInterceptor(), authentication, new TraceIdServerInterceptor())));
         return new InProcessGrpcServer(server.build());
     }
 
+    // ---- Identity (another service) ----
+
     /**
-     * The channel to identity's ServiceTokens, without the caller-token interceptor: asking for a service token must
-     * not need one.
+     * {@code host:port} of identity's gRPC server (e.g. {@code identity:9091}), or {@code in-process:<name>} for an
+     * in-process server of that name (tests).
      */
+    private static ManagedChannel channelTo(String target, ClientInterceptor... interceptors) {
+        if (target.startsWith(IN_PROCESS_PREFIX)) {
+            return InProcessChannelBuilder.forName(target.substring(IN_PROCESS_PREFIX.length()))
+                    .directExecutor().intercept(interceptors).build();
+        }
+        return NettyChannelBuilder.forTarget(target).usePlaintext().intercept(interceptors).build();
+    }
+
     @Bean(destroyMethod = "shutdownNow")
-    public ManagedChannel serviceTokenChannel(@Value("${app.grpc.client.deadline:30s}") Duration deadline) {
-        return InProcessChannelBuilder.forName(serverName)
-                .directExecutor()
-                .intercept(new TraceIdClientInterceptor(), new DefaultDeadlineClientInterceptor(deadline))
-                .build();
+    public ManagedChannel identityServiceTokenChannel(@Value("${app.grpc.identity.target}") String target,
+                                                      @Value("${app.grpc.identity.deadline:5s}") Duration deadline) {
+        return channelTo(target, new TraceIdClientInterceptor(), new DefaultDeadlineClientInterceptor(deadline));
     }
 
     @Bean
-    public OutgoingCallerToken outgoingCallerToken(@Qualifier("serviceTokenChannel") ManagedChannel serviceTokenChannel,
-                                                   @Value("${app.service-client.id}") String clientId,
-                                                   @Value("${app.service-client.secret}") String clientSecret) {
-        return new OutgoingCallerToken(ServiceTokensGrpc.newBlockingStub(serviceTokenChannel), clientId, clientSecret);
+    public OutgoingCallerToken outgoingCallerToken(
+            @Qualifier("identityServiceTokenChannel") ManagedChannel identityServiceTokenChannel,
+            @Value("${app.service-client.id}") String clientId,
+            @Value("${app.service-client.secret}") String clientSecret) {
+        return new OutgoingCallerToken(ServiceTokensGrpc.newBlockingStub(identityServiceTokenChannel), clientId,
+                clientSecret);
     }
+
+    @Bean(destroyMethod = "shutdownNow")
+    public ManagedChannel identityChannel(OutgoingCallerToken tokens,
+                                          @Value("${app.grpc.identity.target}") String target,
+                                          @Value("${app.grpc.identity.deadline:5s}") Duration deadline) {
+        return channelTo(target, new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
+                new DefaultDeadlineClientInterceptor(deadline));
+    }
+
+    @Bean
+    public UserDirectoryGrpc.UserDirectoryBlockingStub userDirectoryStub(
+            @Qualifier("identityChannel") ManagedChannel identityChannel) {
+        return UserDirectoryGrpc.newBlockingStub(identityChannel);
+    }
+
+    /** Names in the change history and on attachments, from identity's directory. */
+    @Bean
+    public UserDisplayNames userDisplayNames(UserDirectoryGrpc.UserDirectoryBlockingStub userDirectoryStub) {
+        return new GrpcUserDisplayNames(userDirectoryStub);
+    }
+
+    // ---- The contexts still in this application ----
 
     @Bean(destroyMethod = "shutdownNow")
     @Primary
@@ -92,11 +131,6 @@ public class GrpcConfig {
                 .intercept(new CallerTokenClientInterceptor(tokens), new TraceIdClientInterceptor(),
                         new DefaultDeadlineClientInterceptor(deadline))
                 .build();
-    }
-
-    @Bean
-    public UserDirectoryGrpc.UserDirectoryBlockingStub userDirectoryStub(ManagedChannel grpcChannel) {
-        return UserDirectoryGrpc.newBlockingStub(grpcChannel);
     }
 
     @Bean

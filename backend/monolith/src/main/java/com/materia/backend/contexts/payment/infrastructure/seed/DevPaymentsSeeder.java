@@ -1,8 +1,8 @@
 package com.materia.backend.contexts.payment.infrastructure.seed;
 
 import com.materia.backend.common.infrastructure.seed.DevSeed;
-import com.materia.backend.contexts.auth.application.dtos.UserSummary;
-import com.materia.backend.contexts.auth.domain.ports.in.UserDirectoryUseCase;
+import com.materia.backend.infrastructure.seed.DevUsers;
+import com.materia.backend.infrastructure.seed.DevUsers.SeedUser;
 import com.materia.backend.contexts.invoice.application.dtos.InvoiceOutput;
 import com.materia.backend.contexts.invoice.domain.enums.InvoiceType;
 import com.materia.backend.contexts.invoice.domain.ports.in.InvoiceUseCase;
@@ -58,9 +58,9 @@ public class DevPaymentsSeeder implements ApplicationRunner {
 
     private final PaymentUseCase payments;
     private final InvoiceUseCase invoices;
-    private final UserDirectoryUseCase users;
+    private final DevUsers users;
 
-    public DevPaymentsSeeder(PaymentUseCase payments, InvoiceUseCase invoices, UserDirectoryUseCase users) {
+    public DevPaymentsSeeder(PaymentUseCase payments, InvoiceUseCase invoices, DevUsers users) {
         this.payments = payments;
         this.invoices = invoices;
         this.users = users;
@@ -72,7 +72,7 @@ public class DevPaymentsSeeder implements ApplicationRunner {
             log.info("[DEV-SEED] Payments already present, nothing seeded");
             return;
         }
-        UserSummary admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
+        SeedUser admin = users.findUserByEmail(DevSeed.ADMIN_EMAIL).orElse(null);
         if (admin == null) {
             log.warn("[DEV-SEED] No payment seeded: the dev admin is missing");
             return;

@@ -2,8 +2,8 @@ package com.materia.backend.contexts.purchaseOrder;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderLineInput;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.PurchaseOrderOutput;
@@ -33,7 +33,7 @@ class PurchaseOrderLifecycleIT extends AbstractIntegrationTest {
 
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private PurchaseOrderRepository repository;
-    @Autowired private UserRepository users;
+    @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
     private void flushAndClear() {
@@ -71,7 +71,7 @@ class PurchaseOrderLifecycleIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("lifecycle: draft → submitted → confirmed → ready for receipt → tracked → cancelled is persisted at each step (US1)")
     void lifecycle_isPersistedAtEachStep() {
-        User receiver = users.save(aReceiver().build());
+        TestAccount receiver = users.save(aReceiver().build());
         UUID id = createDraft(line(null, "MAT-A", 10)).getId();
         assertEquals(OrderStatus.DRAFT, reload(id).getStatus());
 

@@ -2,8 +2,8 @@ package com.materia.backend.contexts.goodsReceipt;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptOutput;
@@ -50,7 +50,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private GoodsReceiptRepository receiptRepository;
     @Autowired private MaterialRepository materials;
-    @Autowired private UserRepository users;
+    @Autowired private TestIdentity users;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
 
@@ -67,7 +67,7 @@ class GoodsReceiptReceivingIT extends AbstractIntegrationTest {
     }
 
     private Receivable receivableOrder(int[] quantities, Material... lineMaterials) {
-        User receiver = users.save(aReceiver().build());
+        TestAccount receiver = users.save(aReceiver().build());
         List<PurchaseOrderLineInput> lines = new ArrayList<>();
         for (int i = 0; i < lineMaterials.length; i++) {
             PurchaseOrderLineInput line = new PurchaseOrderLineInput();

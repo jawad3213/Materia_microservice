@@ -229,7 +229,7 @@ jobs:
         with:
           name: integration-coverage
           retention-days: 3
-          path: backend/monolith/target/jacoco-it.exec
+          path: backend/*/target/jacoco-it.exec # stored relative to backend/
 
       - name: Upload integration test reports
         if: always()
@@ -271,7 +271,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: integration-coverage
-          path: backend/monolith/target
+          path: backend
 
       - name: Coverage gate (80% of branches, unit + integration tests)
         working-directory: backend
@@ -331,7 +331,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: vuln
-          skip-dirs: frontend/node_modules,backend/materia-common/target,backend/materia-grpc/target,backend/monolith/target,backend/gateway-service/target
+          skip-dirs: frontend/node_modules,backend/materia-common/target,backend/materia-grpc/target,backend/monolith/target,backend/identity-service/target,backend/gateway-service/target
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           trivyignores: .trivyignore
@@ -346,6 +346,19 @@ jobs:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
           scan-ref: backend/monolith/target
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+      - name: Scan the identity JAR (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: rootfs
+          scan-ref: backend/identity-service/target
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -373,6 +386,13 @@ jobs:
           retention-days: 3
           path: backend/monolith/target/*.jar
 
+      - name: Keep the scanned identity JAR for its image
+        uses: actions/upload-artifact@v4
+        with:
+          name: identity-jar
+          retention-days: 3
+          path: backend/identity-service/target/*.jar
+
       - name: Keep the scanned gateway JAR for its image
         uses: actions/upload-artifact@v4
         with:
@@ -399,6 +419,12 @@ jobs:
           name: backend-jar
           path: backend/monolith/target
 
+      - name: Get the identity JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: identity-jar
+          path: backend/identity-service/target
+
       - name: Get the gateway JAR
         uses: actions/download-artifact@v4
         with:
@@ -407,6 +433,9 @@ jobs:
 
       - name: Build backend image
         run: docker build --pull -t "$PROJECT-backend:$IMAGE_TAG" backend/monolith/
+
+      - name: Build identity image
+        run: docker build --pull -t "$PROJECT-identity:$IMAGE_TAG" backend/identity-service/
 
       - name: Build gateway image
         run: docker build --pull -t "$PROJECT-gateway:$IMAGE_TAG" backend/gateway-service/
@@ -421,6 +450,18 @@ jobs:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
           image-ref: ${{ env.PROJECT }}-backend:${{ env.IMAGE_TAG }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+
+      - name: Scan identity image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: image
+          image-ref: ${{ env.PROJECT }}-identity:${{ env.IMAGE_TAG }}
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -453,7 +494,7 @@ jobs:
 
       - name: Save images for the push stage
         if: needs.setup.outputs.push_images == 'true'
-        run: docker save "$PROJECT-backend:$IMAGE_TAG" "$PROJECT-gateway:$IMAGE_TAG" "$PROJECT-frontend:$IMAGE_TAG" | gzip -1 > images.tar.gz
+        run: docker save "$PROJECT-backend:$IMAGE_TAG" "$PROJECT-identity:$IMAGE_TAG" "$PROJECT-gateway:$IMAGE_TAG" "$PROJECT-frontend:$IMAGE_TAG" | gzip -1 > images.tar.gz
 
       - name: Hand the images to the push stage
         if: needs.setup.outputs.push_images == 'true'
@@ -503,7 +544,7 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           gunzip -c images.tar.gz | docker load
-          for SERVICE in backend gateway frontend; do
+          for SERVICE in backend identity gateway frontend; do
             REPOSITORY="$PROJECT-$ENVIRONMENT-$SERVICE"
             TARGET="$REGISTRY/$REPOSITORY:$IMAGE_TAG"
             # Tags are immutable in ECR: a re-run of the same commit finds its image already there.

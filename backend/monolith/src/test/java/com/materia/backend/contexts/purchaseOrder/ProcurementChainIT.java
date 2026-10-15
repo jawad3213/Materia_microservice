@@ -2,8 +2,8 @@ package com.materia.backend.contexts.purchaseOrder;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
@@ -50,7 +50,7 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private MaterialRepository materials;
-    @Autowired private UserRepository users;
+    @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
     private void flushAndClear() {
@@ -108,7 +108,7 @@ class ProcurementChainIT extends AbstractIntegrationTest {
 
     /** Takes a draft order to ready-for-receipt with a fresh receiver; returns the receiver's id. */
     private String readyForReceipt(UUID orderId) {
-        User receiver = users.save(aReceiver().build());
+        TestAccount receiver = users.save(aReceiver().build());
         orders.submit(orderId, "buyer-1");
         flushAndClear();
         orders.confirm(orderId, "admin-1");
@@ -143,7 +143,7 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     void reorderRequisitions_areSavedWithARequester() {
         Material auto = material();
         Material manual = material();
-        User buyer = users.save(aPurchaser().firstName("Bea").lastName("Buyer").build());
+        TestAccount buyer = users.save(aPurchaser().firstName("Bea").lastName("Buyer").build());
 
         String autoCode = requisitionService.createRequisitionFromReorder(snapshotOf(auto), 10, "Below safety stock", true);
         reorder.triggerManualReorder(manual.getId(), 7, "Customer rush", buyer.getId().toString());
@@ -341,7 +341,7 @@ class ProcurementChainIT extends AbstractIntegrationTest {
         assertThrows(RequisitionBusinessException.class,
                 () -> requisitionService.approve(saved.getId(), "buyer-3", "buyer-3", "fine"));
         flushAndClear();
-        User manager = users.save(aPurchaser().firstName("Mona").lastName("Manager").build());
+        TestAccount manager = users.save(aPurchaser().firstName("Mona").lastName("Manager").build());
         var approved = requisitionService.approve(saved.getId(), manager.getId().toString(), manager.getId().toString(), "ok");
         assertEquals("APPROVED", approved.getStatus());
         assertEquals("Mona Manager", approved.getApproverName(), "named from the approver's account, not their id");

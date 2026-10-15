@@ -15,11 +15,12 @@ class AuditedTypesTest {
     @DisplayName("history: each document type is found with the permission its context declared")
     void readPermissions_comeFromTheAnnotations() {
         assertEquals(Optional.of(Optional.of("order:read")), AuditedTypes.readPermissionOf("PurchaseOrder"));
-        assertEquals(Optional.of(Optional.of("user:read")), AuditedTypes.readPermissionOf("Employee"));
+        assertEquals(Optional.of(Optional.of("material:read")), AuditedTypes.readPermissionOf("Material"));
         assertEquals(Optional.of(Optional.of("setting:read")), AuditedTypes.readPermissionOf("Setting"));
         assertEquals(Optional.of(Optional.empty()), AuditedTypes.readPermissionOf("Attachment"), "log:read only");
         assertTrue(AuditedTypes.readPermissionOf("PurchaseOrderLine").isEmpty(), "lines are read with their document");
         assertTrue(AuditedTypes.readPermissionOf("Nonsense").isEmpty());
+        assertTrue(AuditedTypes.readPermissionOf("Employee").isEmpty(), "identity's records: identity serves them");
     }
 
     @Test

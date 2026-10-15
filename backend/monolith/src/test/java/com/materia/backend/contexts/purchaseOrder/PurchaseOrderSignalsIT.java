@@ -2,8 +2,8 @@ package com.materia.backend.contexts.purchaseOrder;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.masterData.domain.entities.Material;
 import com.materia.backend.contexts.masterData.domain.ports.out.MaterialRepository;
 import com.materia.backend.contexts.purchaseOrder.application.dtos.CreatePurchaseOrderInput;
@@ -34,7 +34,7 @@ class PurchaseOrderSignalsIT extends AbstractIntegrationTest {
 
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private MaterialRepository materials;
-    @Autowired private UserRepository users;
+    @Autowired private TestIdentity users;
     @Autowired private ApplicationEvents events;
 
     private UUID draftOrder(Material material) {
@@ -57,7 +57,7 @@ class PurchaseOrderSignalsIT extends AbstractIntegrationTest {
     @DisplayName("signals: submit, confirm and receipt each publish exactly one event on the event bus (US5-1 to US5-3)")
     void lifecycle_publishesEachSignalOnce() {
         Material material = materials.save(aMaterial().stock(0).build());
-        User receiver = users.save(aReceiver().build());
+        TestAccount receiver = users.save(aReceiver().build());
         UUID id = draftOrder(material);
 
         orders.submit(id, "buyer-1");

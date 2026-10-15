@@ -1,8 +1,8 @@
 package com.materia.backend.contexts.goodsReceipt.infrastructure.seed;
 
 import com.materia.backend.common.infrastructure.seed.DevSeed;
-import com.materia.backend.contexts.auth.application.dtos.UserSummary;
-import com.materia.backend.contexts.auth.domain.ports.in.UserDirectoryUseCase;
+import com.materia.backend.infrastructure.seed.DevUsers;
+import com.materia.backend.infrastructure.seed.DevUsers.SeedUser;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
@@ -56,9 +56,9 @@ public class DevGoodsReceiptsSeeder implements ApplicationRunner {
 
     private final GoodsReceiptUseCase receipts;
     private final PurchaseOrderUseCase orders;
-    private final UserDirectoryUseCase users;
+    private final DevUsers users;
 
-    public DevGoodsReceiptsSeeder(GoodsReceiptUseCase receipts, PurchaseOrderUseCase orders, UserDirectoryUseCase users) {
+    public DevGoodsReceiptsSeeder(GoodsReceiptUseCase receipts, PurchaseOrderUseCase orders, DevUsers users) {
         this.receipts = receipts;
         this.orders = orders;
         this.users = users;
@@ -70,7 +70,7 @@ public class DevGoodsReceiptsSeeder implements ApplicationRunner {
             log.info("[DEV-SEED] Goods receipts already present, nothing seeded");
             return;
         }
-        UserSummary receiver = users.findUserByEmail(DevSeed.RECEIVER_EMAIL).orElse(null);
+        SeedUser receiver = users.findUserByEmail(DevSeed.RECEIVER_EMAIL).orElse(null);
         if (receiver == null) {
             log.warn("[DEV-SEED] No goods receipt seeded: the dev receiver is missing");
             return;
@@ -122,7 +122,7 @@ public class DevGoodsReceiptsSeeder implements ApplicationRunner {
         log.info("[DEV-SEED] Created {} goods receipts on {} orders ready for receipt", created, ready.size());
     }
 
-    private void receive(PurchaseOrderOutput order, UserSummary receiver, int percent, int index) {
+    private void receive(PurchaseOrderOutput order, SeedUser receiver, int percent, int index) {
         UUID id = receipts.create(input(order, receiver, percent, true, index)).getId();
         receipts.complete(id, receiver.id().toString());
     }
@@ -141,7 +141,7 @@ public class DevGoodsReceiptsSeeder implements ApplicationRunner {
      * A delivery of {@code percent}% of every order line; with {@code withRejects}, about 5% of each line (at least one
      * unit) is rejected at the quality check.
      */
-    private static CreateGoodsReceiptInput input(PurchaseOrderOutput order, UserSummary receiver, int percent,
+    private static CreateGoodsReceiptInput input(PurchaseOrderOutput order, SeedUser receiver, int percent,
                                                  boolean withRejects, int index) {
         CreateGoodsReceiptInput input = new CreateGoodsReceiptInput();
         input.setPurchaseOrderId(order.getId().toString());

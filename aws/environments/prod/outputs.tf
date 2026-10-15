@@ -18,7 +18,7 @@ output "public_ip" {
 }
 
 output "ecr_repository_urls" {
-  description = "Image repositories (backend, gateway, frontend)."
+  description = "Image repositories (backend, identity, gateway, frontend)."
   value       = module.ecr.repository_urls
 }
 

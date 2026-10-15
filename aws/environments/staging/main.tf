@@ -15,7 +15,7 @@ locals {
 
   # Repositories whose images this environment promotes (prod: staging's), same account and region
   promotion_source_repository_arns = var.promote_from_environment == "" ? [] : [
-    for service in ["backend", "gateway", "frontend"] :
+    for service in ["backend", "identity", "gateway", "frontend"] :
     "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project}-${var.promote_from_environment}-${service}"
   ]
 
@@ -108,6 +108,13 @@ resource "tls_private_key" "jwt" {
   rsa_bits  = 2048
 }
 
+# The secret the backend presents to identity for its service tokens (identity.v1.ServiceTokens): the backend
+# sends it as SERVICE_CLIENT_SECRET, identity checks it against SERVICE_CLIENT_MONOLITH_SECRET.
+resource "random_password" "service_client_monolith" {
+  length  = 48
+  special = false # the value goes through a docker compose .env file
+}
+
 # Grafana's admin account (aws/deploy/docker-compose.yml); Grafana is reached through an SSM port forward only.
 resource "random_password" "grafana_admin" {
   length  = 32
@@ -140,10 +147,12 @@ module "app_parameters" {
   parameters = merge(local.default_app_config, local.bootstrap_admin.config, var.app_config)
   secure_parameters = merge(
     {
-      POSTGRES_PASSWORD      = random_password.postgres.result
-      JWT_PRIVATE_KEY        = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
-      JWT_PUBLIC_KEY         = base64encode(tls_private_key.jwt.public_key_pem)
-      GRAFANA_ADMIN_PASSWORD = random_password.grafana_admin.result
+      POSTGRES_PASSWORD              = random_password.postgres.result
+      JWT_PRIVATE_KEY                = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
+      JWT_PUBLIC_KEY                 = base64encode(tls_private_key.jwt.public_key_pem)
+      GRAFANA_ADMIN_PASSWORD         = random_password.grafana_admin.result
+      SERVICE_CLIENT_SECRET          = random_password.service_client_monolith.result
+      SERVICE_CLIENT_MONOLITH_SECRET = random_password.service_client_monolith.result
     },
     local.bootstrap_admin.secrets,
     var.extra_secrets,

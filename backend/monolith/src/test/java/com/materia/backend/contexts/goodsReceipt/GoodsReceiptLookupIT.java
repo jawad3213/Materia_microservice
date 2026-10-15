@@ -2,8 +2,8 @@ package com.materia.backend.contexts.goodsReceipt;
 
 import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
-import com.materia.backend.contexts.auth.domain.entities.User;
-import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
+import com.materia.backend.support.fixtures.TestAccount;
+import com.materia.backend.support.fixtures.TestIdentity;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptOutput;
@@ -42,7 +42,7 @@ class GoodsReceiptLookupIT extends AbstractIntegrationTest {
     @Autowired private GoodsReceiptRepository receipts;
     @Autowired private GoodsReceiptUseCase receiptService;
     @Autowired private PurchaseOrderUseCase orders;
-    @Autowired private UserRepository users;
+    @Autowired private TestIdentity users;
     @PersistenceContext private EntityManager em;
 
     private static Set<UUID> ids(List<GoodsReceipt> found) {
@@ -93,7 +93,7 @@ class GoodsReceiptLookupIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("F-006 observation: after its order is cancelled, a draft receipt cannot be validated but its receiver can delete it")
     void cancelledOrder_draftReceipt_observedOutcome() {
-        User receiver = users.save(aReceiver().build());
+        TestAccount receiver = users.save(aReceiver().build());
         PurchaseOrderLineInput line = new PurchaseOrderLineInput();
         line.setMaterialCode("MAT-F6");
         line.setQuantity(5);

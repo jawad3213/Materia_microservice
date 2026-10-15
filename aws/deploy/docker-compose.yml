@@ -5,8 +5,8 @@
 # plus REGISTRY, PROJECT, ENVIRONMENT and IMAGE_TAG.
 #
 # Only the frontend publishes a port to the network: its nginx serves
-# the SPA and proxies /api to the gateway, which routes it to the
-# backend. Gateway, backend and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
+# the SPA and proxies /api to the gateway, which routes it to identity
+# or the backend. Gateway, identity, backend and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
 # reach them through an SSM port forward (see aws/README.md).
 # ===================================================================
 name: materia
@@ -44,6 +44,10 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       APP_ATTACHMENTS_DIR: /data/attachments
+      # Identity alone signs tokens: this service verifies them, and asks identity for its own service tokens.
+      JWT_PRIVATE_KEY: ""
+      SERVICE_CLIENT_ID: monolith
+      GRPC_IDENTITY_TARGET: identity:9091
       # Actuator on its own port, reachable only inside the compose network: health checks and Prometheus
       MANAGEMENT_SERVER_PORT: "8081"
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
@@ -63,16 +67,52 @@ services:
     logging: *logging
     networks: [internal]
 
-  # The API gateway: refuses invalid tokens, rate-limits, routes /api to the backend
+  # Identity: sign-in, accounts, employees; the only signer of tokens. REST on 8082 (through the gateway),
+  # gRPC identity.v1 on 9091 for the backend. Needs the shared tables the backend's migrations create, so it
+  # waits for the backend to be healthy.
+  identity:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-identity:${IMAGE_TAG}
+    restart: always
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      # The shared .env is the backend's: these keep identity on its own schema, without an outbox relay
+      SPRING_FLYWAY_DEFAULT_SCHEMA: identity
+      APP_MESSAGING_TYPE: spring
+      APP_OUTBOX_RELAY_ENABLED: "false"
+      SPRINGDOC_INFO_TITLE: Materia Identity API
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
+      MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    logging: *logging
+    networks: [internal]
+
+  # The API gateway: refuses invalid tokens, rate-limits, routes /api to identity or the backend
   gateway:
     image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-gateway:${IMAGE_TAG}
     restart: always
     environment:
       GATEWAY_BACKEND_URI: http://backend:8080
+      GATEWAY_IDENTITY_URI: http://identity:8082
       MANAGEMENT_SERVER_PORT: "8081"
       MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
     depends_on:
       backend:
+        condition: service_started
+      identity:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
