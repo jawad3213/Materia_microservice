@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (ignored by git) and fill in.
+
+# Who may open the application: your own address, e.g. "203.0.113.7/32" (curl -s https://checkip.amazonaws.com)
+allowed_cidrs = ["203.0.113.7/32"]
+
+# aws_region     = "eu-west-3"
+# spring_profile = "dev"   # dev: demo accounts and data; prod: starts empty

@@ -128,13 +128,13 @@ jobs:
       - name: Infrastructure lint (Terraform, shellcheck)
         run: |
           terraform fmt -check -recursive aws
-          for ROOT in aws/bootstrap aws/environments/staging aws/environments/prod; do
+          for ROOT in aws/bootstrap aws/environments/staging aws/environments/prod aws/environments/fargate-test; do
             echo "::group::terraform validate $ROOT"
             terraform -chdir="$ROOT" init -backend=false -input=false >/dev/null
             terraform -chdir="$ROOT" validate
             echo "::endgroup::"
           done
-          shellcheck aws/deploy/*.sh .github/scripts/*.sh
+          shellcheck aws/deploy/*.sh aws/environments/fargate-test/*.sh .github/scripts/*.sh
 
   # ------------------------------------------------------------------------------------------
   # 3. Unit tests (backend *Test, frontend Vitest)
