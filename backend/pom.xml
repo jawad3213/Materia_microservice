@@ -61,6 +61,8 @@
              CVE-2025-55163 (HTTP/2 "MadeYouReset" in grpc-netty-shaded), which the CI image scans fail on. -->
         <grpc.version>1.75.0</grpc.version>
         <protobuf.version>3.25.8</protobuf.version>
+        <!-- AWS SDK: S3 for attachment files (app.attachments.storage=s3) -->
+        <aws-sdk.version>2.55.5</aws-sdk.version>
         <!-- Lets modules without a JaCoCo agent use @{argLine} in the Surefire configuration below. -->
         <argLine/>
         <!-- Libraries have nothing to run: `./mvnw -pl procurement-service -am spring-boot:run` starts procurement only. -->
@@ -99,6 +101,13 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
                 <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

@@ -3,6 +3,7 @@ package com.materia.backend.common.attachment.infrastructure.adapters.out.storag
 import com.materia.backend.common.attachment.domain.exceptions.AttachmentStorageException;
 import com.materia.backend.common.attachment.domain.ports.out.AttachmentStorage;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -13,9 +14,11 @@ import java.nio.file.StandardCopyOption;
 /**
  * Keeps attachments as files under app.attachments.storage-dir. On EC2 that directory is /data/attachments, on the
  * same snapshotted EBS volume as the database. Each file is written to a temporary name and moved into place, so a
- * reader never sees half a file.
+ * reader never sees half a file. The default store; with {@code app.attachments.storage=s3} the files go to S3 instead
+ * (S3AttachmentStorage, materia-platform).
  */
 @Component
+@ConditionalOnProperty(name = "app.attachments.storage", havingValue = "local", matchIfMissing = true)
 public class LocalFileAttachmentStorage implements AttachmentStorage {
 
     private final Path root;

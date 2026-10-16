@@ -24,6 +24,17 @@
             <groupId>com.materia</groupId>
             <artifactId>materia-grpc</artifactId>
         </dependency>
+        <!-- Attachment files in S3 (app.attachments.storage=s3): the synchronous client only -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <!-- The network transport every service serves its contracts on and calls the others with -->
         <dependency>
             <groupId>io.grpc</groupId>
