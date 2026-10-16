@@ -8,6 +8,9 @@ import java.util.List;
  * The procurement dashboard. Every money figure is in {@code currency}, the currency most of the documents use;
  * documents in other currencies are left out of money totals (and counted in {@code otherCurrencyDocuments}) so
  * that amounts are never added across currencies. A section the user may not read is {@code null} or empty.
+ *
+ * @param unavailable the sections left out because the service holding them did not answer (still starting, too
+ *                    slow, down), e.g. {@code monthlyTrend}, {@code kpi:openOrders}; empty when everything is shown
  */
 public record DashboardOutput(
         LocalDateTime generatedAt,
@@ -22,7 +25,8 @@ public record DashboardOutput(
         List<AgingBucket> invoiceAging,
         List<StockAlert> stockAlerts,
         List<Activity> recentActivity,
-        CurrencyConversion conversion) {
+        CurrencyConversion conversion,
+        List<String> unavailable) {
 
     /**
      * How amounts in other currencies were brought into the reporting currency. Committed documents use the rate of

@@ -156,6 +156,82 @@ class DashboardServiceTest {
         verify(fx, never()).currentRates();
     }
 
+    @Test
+    @DisplayName("unavailable: a figure whose service does not answer is left out and named, the rest is shown")
+    void unansweredFigure_leftOutAndNamed() {
+        when(readModel.documentsByCurrency(anyBoolean(), anyBoolean(), anyBoolean())).thenReturn(Map.of("MAD", 7L));
+        when(readModel.ordersByStatus()).thenThrow(unanswered());
+        when(readModel.countStockAlerts(anyBoolean())).thenThrow(unanswered());
+        when(readModel.countRequisitions("SUBMITTED")).thenReturn(2L);
+
+        DashboardOutput out = service.getOverview(RECEIVER);
+
+        assertEquals(List.of("kpi:stockAlerts", "orderStatus"), out.unavailable());
+        assertTrue(out.orderStatus().isEmpty());
+        assertEquals(List.of("requisitionsAwaiting", "openOrders", "receiptsThisMonth", "returnsOpen"),
+                out.kpis().stream().map(DashboardOutput.Kpi::key).toList());
+        assertEquals(0, BigDecimal.valueOf(2).compareTo(out.kpis().get(0).value()));
+    }
+
+    @Test
+    @DisplayName("unavailable: without the invoices to pay, neither their tile nor the aging chart shows a misleading 0")
+    void unansweredInvoices_noTileNoAging() {
+        when(readModel.outstandingByDueDate(any(), any(), any())).thenThrow(unanswered());
+
+        DashboardOutput out = service.getOverview(Set.of("invoice:read"));
+
+        assertEquals(List.of("invoiceAging", "kpi:invoicesToPay"), out.unavailable());
+        assertTrue(out.kpis().isEmpty());
+        assertTrue(out.invoiceAging().isEmpty());
+    }
+
+    @Test
+    @DisplayName("unavailable: without the currencies, amounts stay in the reporting currency and the note is named")
+    void unansweredCurrencies_amountsInReportingCurrency() {
+        when(readModel.documentsByCurrency(anyBoolean(), anyBoolean(), anyBoolean())).thenThrow(unanswered());
+
+        DashboardOutput out = service.getOverview(Set.of("order:read"));
+
+        assertEquals(List.of("conversion"), out.unavailable());
+        assertEquals("MAD", out.currency());
+        assertNull(out.conversion());
+        assertEquals(List.of("openOrders"), out.kpis().stream().map(DashboardOutput.Kpi::key).toList());
+        verify(fx, never()).currentRates();
+    }
+
+    @Test
+    @DisplayName("unavailable: recent activity keeps the modules that answered")
+    void unansweredActivityModule_othersKept() {
+        when(readModel.latest(DashboardReadModel.ActivitySource.REQUISITION, 10)).thenThrow(unanswered());
+        when(readModel.latest(DashboardReadModel.ActivitySource.RETURN, 10)).thenReturn(List.of(
+                new DashboardReadModel.ActivityRow(java.util.UUID.randomUUID(), "RTV-1", "Return", "DRAFT",
+                        TODAY.atTime(9, 0))));
+
+        DashboardOutput out = service.getOverview(Set.of("requisition:read", "return:read"));
+
+        assertEquals(List.of("recentActivity"), out.unavailable());
+        assertEquals(List.of("RTV-1"), out.recentActivity().stream().map(DashboardOutput.Activity::code).toList());
+    }
+
+    @Test
+    @DisplayName("unavailable: any other failure is a bug and still fails the dashboard")
+    void otherFailure_failsTheDashboard() {
+        when(readModel.ordersByStatus()).thenThrow(new IllegalStateException("bug"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service.getOverview(Set.of("order:read")));
+    }
+
+    @Test
+    @DisplayName("unavailable: empty when every service answered")
+    void everythingAnswered_nothingUnavailable() {
+        assertTrue(service.getOverview(RECEIVER).unavailable().isEmpty());
+    }
+
+    private static DashboardReadModel.FigureUnavailableException unanswered() {
+        return new DashboardReadModel.FigureUnavailableException("No answer: DEADLINE_EXCEEDED", null);
+    }
+
     private static FxValuation eur(String rate, String source) {
         return new FxValuation(CurrencyCode.EUR, CurrencyCode.MAD, new BigDecimal(rate), TODAY, source);
     }

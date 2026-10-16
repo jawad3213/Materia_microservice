@@ -52,3 +52,28 @@ export function timeAgo(iso: string, now: Date = new Date()): string {
   if (days < 30) return `${days} day${days > 1 ? "s" : ""} ago`;
   return new Date(iso).toLocaleDateString();
 }
+
+const SECTION_LABELS: Record<string, string> = {
+  "kpi:requisitionsAwaiting": "Awaiting approval",
+  "kpi:openOrders": "Open orders",
+  "kpi:receiptsThisMonth": "Receipts this month",
+  "kpi:invoicesToPay": "Invoices to pay",
+  "kpi:paidThisMonth": "Paid this month",
+  "kpi:stockAlerts": "Stock alerts",
+  "kpi:returnsOpen": "Returns with suppliers",
+  monthlyTrend: "Monthly trend",
+  orderStatus: "Order status",
+  spendByCategory: "Spend by category",
+  topSuppliers: "Top suppliers",
+  receiptQuality: "Receipt quality",
+  invoiceAging: "Invoice aging",
+  stockAlerts: "Stock alerts",
+  recentActivity: "Recent activity",
+  conversion: "Currency conversion",
+};
+
+/** The dashboard sections the server could not get, as people read them: once each, in the server's order. */
+export function unavailableLabels(sections: string[] | undefined): string[] {
+  const labels = (sections ?? []).map((section) => SECTION_LABELS[section] ?? section);
+  return labels.filter((label, i) => labels.indexOf(label) === i);
+}
