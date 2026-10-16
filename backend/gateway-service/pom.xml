@@ -16,12 +16,19 @@
     </description>
 
     <properties>
-        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
         <spring-boot.run.skip>false</spring-boot.run.skip>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- Brought by spring-cloud-starter at 1.80.x: CVE-2026-13506 and CVE-2026-8763, fixed in 1.85, which the CI
+                 image scan fails on. Before the BOM import, so it wins. -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>1.85.2</version>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>

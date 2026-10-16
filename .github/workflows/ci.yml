@@ -29,7 +29,7 @@ env:
   JAVA_VERSION: "21"
   NODE_VERSION: "22"
   PROJECT: materia
-  TRIVY_VERSION: v0.58.1
+  TRIVY_VERSION: v0.70.0
   MAVEN_ARGS: -B --no-transfer-progress # read by Maven 3.9+ (the wrapper) on every mvnw call
 
 jobs:
@@ -325,7 +325,7 @@ jobs:
       # and an expiry date in .trivyignore.
       # The lockfiles: frontend/package-lock.json (and any other lockfile in the repository).
       - name: Scan lockfiles (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: fs
@@ -341,7 +341,7 @@ jobs:
       # The libraries bundled in the JAR, transitive ones included (which pom.xml alone does not show).
       # A filesystem scan only reads lockfiles; a rootfs scan opens the JAR.
       - name: Scan the backend JAR (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
@@ -354,7 +354,7 @@ jobs:
           format: table
 
       - name: Scan the identity JAR (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
@@ -367,7 +367,7 @@ jobs:
           format: table
 
       - name: Scan the masterdata JAR (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
@@ -380,7 +380,7 @@ jobs:
           format: table
 
       - name: Scan the finance JAR (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
@@ -393,7 +393,7 @@ jobs:
           format: table
 
       - name: Scan the analytics JAR (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
@@ -406,7 +406,7 @@ jobs:
           format: table
 
       - name: Scan the gateway JAR (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: rootfs
@@ -532,7 +532,7 @@ jobs:
         run: docker build --pull --build-arg VITE_API_BASE_URL=/api/v1 -t "$PROJECT-frontend:$IMAGE_TAG" frontend/
 
       - name: Scan backend image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
@@ -544,7 +544,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan identity image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
@@ -556,7 +556,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan masterdata image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
@@ -568,7 +568,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan finance image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
@@ -580,7 +580,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan analytics image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
@@ -592,7 +592,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan gateway image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
@@ -604,7 +604,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan frontend image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           scan-type: image
