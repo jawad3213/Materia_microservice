@@ -29,18 +29,19 @@ locals {
   # Settings the backend needs and that have no default in application.properties.
   # Anything in var.app_config overrides these.
   default_app_config = {
-    SPRING_PROFILES_ACTIVE                  = var.spring_profile
-    POSTGRES_DB                             = "materia"
-    POSTGRES_USER                           = "materia"
-    SPRING_DATASOURCE_DRIVER_CLASS_NAME     = "org.postgresql.Driver"
-    SPRING_JPA_HIBERNATE_DIALECT            = "org.hibernate.dialect.PostgreSQLDialect"
-    SPRING_FLYWAY_DEFAULT_SCHEMA            = "public"
-    SPRING_JPA_BATCH_SIZE                   = "50"
-    SPRING_JPA_ORDER_INSERTS                = "true"
-    SPRING_JPA_ORDER_UPDATES                = "true"
-    APP_MESSAGING_TYPE                      = "kafka"
-    SPRING_KAFKA_BOOTSTRAP_SERVERS          = "kafka:29092"
-    SPRING_KAFKA_CONSUMER_GROUP_ID          = "materia-${var.environment}"
+    SPRING_PROFILES_ACTIVE              = var.spring_profile
+    POSTGRES_DB                         = "materia"
+    POSTGRES_USER                       = "materia"
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME = "org.postgresql.Driver"
+    SPRING_JPA_HIBERNATE_DIALECT        = "org.hibernate.dialect.PostgreSQLDialect"
+    SPRING_FLYWAY_DEFAULT_SCHEMA        = "public"
+    SPRING_JPA_BATCH_SIZE               = "50"
+    SPRING_JPA_ORDER_INSERTS            = "true"
+    SPRING_JPA_ORDER_UPDATES            = "true"
+    APP_MESSAGING_TYPE                  = "kafka"
+    SPRING_KAFKA_BOOTSTRAP_SERVERS      = "kafka:29092"
+    # No SPRING_KAFKA_CONSUMER_GROUP_ID: every service reads this .env, and one group for all would split the events
+    # between them (each event reaching one service only). Each service has its own (app.events.consumer-group).
     SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET = "earliest"
     SPRING_KAFKA_LISTENER_AUTO_STARTUP      = "true"
     JWT_EXPIRATION_MS                       = "900000"
