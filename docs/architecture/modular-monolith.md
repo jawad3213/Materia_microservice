@@ -79,6 +79,11 @@ database server of its own is a dump of its schema.
 - Each service relays its own outbox to Kafka, keeps its own change history (the audit log page's feed is composed
   by analytics over `audit.v1.ChangeHistory`), its own attachments (the gateway routes attachment requests by owner
   type) and its own exchange rates (refreshed daily by procurement, finance and analytics).
+- Attachment files (procurement's and finance's) are stored on disk by default (`app.attachments.storage=local`,
+  `/data/attachments` on EC2) or in S3 (`app.attachments.storage=s3`, `S3AttachmentStorage`): one bucket, each
+  service under its own prefix (`procurement/`, `finance/`), credentials from the task role. Only the bytes move; the
+  metadata stays in each service's `attachments` table. `S3AttachmentStorageIT` runs it against an S3-compatible
+  server.
 - On EC2, `deploy.sh` applies the database users before the services start and again once procurement migrated (on
   a new database, procurement's legacy migrations still create every context's tables before moving them). Local
   `docker compose` does the same with two one-shot services, `db-roles` and `db-roles-handover`; the passwords
