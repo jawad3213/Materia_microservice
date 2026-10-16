@@ -30,8 +30,13 @@ FROM nginx:1.29-alpine
 # Apply the operating system's security fixes released since the base image was published.
 RUN apk upgrade --no-cache
 
-# Replace default Nginx configuration with SPA configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The SPA configuration, as a template the image's entrypoint fills in at start-up (envsubst), only with MATERIA_*
+# variables: where the gateway is, and which load balancer to trust for the client's address (see nginx.conf).
+RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+ENV NGINX_ENVSUBST_FILTER=MATERIA_ \
+    MATERIA_GATEWAY_UPSTREAM=gateway:8080 \
+    MATERIA_TRUSTED_PROXY=127.0.0.1/32
 
 # Copy production build from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
