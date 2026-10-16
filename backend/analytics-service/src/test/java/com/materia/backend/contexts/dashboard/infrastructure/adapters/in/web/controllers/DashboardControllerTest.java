@@ -33,7 +33,7 @@ class DashboardControllerTest extends AbstractWebMvcTest {
     private static DashboardOutput sample() {
         return new DashboardOutput(LocalDateTime.of(2026, 10, 15, 10, 0), "MAD", 0,
                 List.of(new DashboardOutput.Kpi("openOrders", "Open Orders", new BigDecimal("1300.00"), "MAD", "3 order(s)", "/purchase-orders", "brand")),
-                null, List.of(), List.of(), List.of(), null, List.of(), List.of(), List.of(), null);
+                null, List.of(), List.of(), List.of(), null, List.of(), List.of(), List.of(), null, List.of());
     }
 
     @Test

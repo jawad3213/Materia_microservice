@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMoney, monthLabel, timeAgo, toQuarters, total } from "../dashboardFormat";
+import { formatMoney, monthLabel, timeAgo, toQuarters, total, unavailableLabels } from "../dashboardFormat";
 
 describe("dashboard formatting", () => {
   it("rule: amounts carry their currency, compact on chart axes", () => {
@@ -32,5 +32,20 @@ describe("dashboard formatting", () => {
     expect(timeAgo("2026-10-15T11:30:00Z", now)).toBe("30 min ago");
     expect(timeAgo("2026-10-15T09:00:00Z", now)).toBe("3 h ago");
     expect(timeAgo("2026-10-12T12:00:00Z", now)).toBe("3 days ago");
+  });
+});
+
+describe("unavailable sections", () => {
+  it("names each section once, as people read them, and keeps unknown keys", () => {
+    expect(unavailableLabels(["kpi:stockAlerts", "monthlyTrend", "stockAlerts", "somethingNew"])).toEqual([
+      "Stock alerts",
+      "Monthly trend",
+      "somethingNew",
+    ]);
+  });
+
+  it("is empty when everything was shown, or when the server does not send the list", () => {
+    expect(unavailableLabels([])).toEqual([]);
+    expect(unavailableLabels(undefined)).toEqual([]);
   });
 });

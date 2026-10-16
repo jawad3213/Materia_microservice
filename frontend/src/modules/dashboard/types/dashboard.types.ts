@@ -94,6 +94,11 @@ export interface DashboardData {
   recentActivity: DashboardActivity[];
   /** Present when some documents are in another currency than the reporting one. */
   conversion?: CurrencyConversion | null;
+  /**
+   * Sections left out because the service holding them did not answer (still starting, too slow, down), e.g.
+   * "monthlyTrend" or "kpi:openOrders". Empty or absent when everything is shown.
+   */
+  unavailable?: string[];
 }
 
 export interface ConvertedCurrency {

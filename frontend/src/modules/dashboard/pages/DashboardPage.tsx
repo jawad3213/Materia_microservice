@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import CurrencyNote from "../components/CurrencyNote";
+import UnavailableNote from "../components/UnavailableNote";
 import PageMeta from "../../../shared/components/common/PageMeta";
 import Button from "../../../shared/components/ui/button/Button";
 import { PageLoader } from "../../../shared/components/page/DetailParts";
@@ -88,6 +89,8 @@ export default function DashboardPage() {
           {error}
         </div>
       )}
+
+      {data && <UnavailableNote sections={data.unavailable} onRefresh={refresh} refreshing={loading} />}
 
       {data?.conversion && <CurrencyNote conversion={data.conversion} />}
 

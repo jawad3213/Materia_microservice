@@ -18,11 +18,14 @@ import com.materia.backend.contexts.dashboard.domain.ports.in.DashboardUseCase;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.ActivitySource;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.DueGroup;
+import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.FigureUnavailableException;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.Group;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.MonthAmount;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.Rates;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.ReceiptTotals;
 import com.materia.backend.contexts.dashboard.domain.ports.out.DashboardReadModel.StockRow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -45,6 +48,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -58,6 +62,10 @@ import java.util.stream.Stream;
  * waves: at once, the documents per currency and every figure that needs no exchange rate; then, once the rates are
  * known, the amounts in the reporting currency. The executor must run each task as the user who opened the dashboard
  * (CallContextExecutor), so every call carries that user's rights.
+ *
+ * <p>A figure whose service does not answer ({@link FigureUnavailableException}: still starting, too slow, down) does
+ * not fail the dashboard: its section is shown as for a user without access to it (no tile, an empty list) and is
+ * named in {@code unavailable}, so the page can say so. Any other failure fails the dashboard, as a bug should.
  */
 @Service
 @Transactional(readOnly = true)
@@ -86,6 +94,8 @@ public class DashboardService implements DashboardUseCase {
             "READY_FOR_RECEIPT", "Ready for Receipt", "PARTIALLY_RECEIVED", "Partly Received",
             "COMPLETED", "Completed", "CANCELLED", "Cancelled", "REJECTED", "Rejected");
 
+    private static final Logger log = LoggerFactory.getLogger(DashboardService.class);
+
     private final DashboardReadModel readModel;
     private final ReportingFx fx;
     private final Clock clock;
@@ -113,21 +123,30 @@ public class DashboardService implements DashboardUseCase {
     public DashboardOutput getOverview(Set<String> permissions) {
         Access access = new Access(permissions == null ? Set.of() : permissions);
         LocalDate today = LocalDate.now(clock);
+        Set<String> unavailable = ConcurrentHashMap.newKeySet();
 
         // ---- First wave: the documents per currency, and every figure that needs no exchange rate ----
         CompletableFuture<Map<String, Long>> currencies = access.orders || access.invoices || access.payments
-                ? ask(() -> readModel.documentsByCurrency(access.orders, access.invoices, access.payments))
+                ? shown(ask(() -> readModel.documentsByCurrency(access.orders, access.invoices, access.payments)),
+                        "conversion", Map.of(), unavailable)
                 : done(Map.of());
-        CompletableFuture<Kpi> requisitionsKpi = access.requisitions ? requisitionsKpi() : done(null);
-        CompletableFuture<Kpi> receiptsKpi = access.receipts ? receiptsKpi(today) : done(null);
-        CompletableFuture<Kpi> stockKpi = access.materials ? stockKpi() : done(null);
-        CompletableFuture<Kpi> returnsKpi = access.returns ? returnsKpi() : done(null);
-        CompletableFuture<List<Slice>> orderStatus = access.orders ? ask(this::orderStatus) : done(List.of());
+        CompletableFuture<Kpi> requisitionsKpi = access.requisitions
+                ? shown(requisitionsKpi(), "kpi:requisitionsAwaiting", null, unavailable) : done(null);
+        CompletableFuture<Kpi> receiptsKpi = access.receipts
+                ? shown(receiptsKpi(today), "kpi:receiptsThisMonth", null, unavailable) : done(null);
+        CompletableFuture<Kpi> stockKpi = access.materials
+                ? shown(stockKpi(), "kpi:stockAlerts", null, unavailable) : done(null);
+        CompletableFuture<Kpi> returnsKpi = access.returns
+                ? shown(returnsKpi(), "kpi:returnsOpen", null, unavailable) : done(null);
+        CompletableFuture<List<Slice>> orderStatus = access.orders
+                ? shown(ask(this::orderStatus), "orderStatus", List.of(), unavailable) : done(List.of());
         CompletableFuture<ReceiptQuality> receiptQuality = access.receipts
-                ? ask(() -> receiptQuality(readModel.receiptTotals(DONE_RECEIPTS)))
+                ? shown(ask(() -> receiptQuality(readModel.receiptTotals(DONE_RECEIPTS))), "receiptQuality", null,
+                        unavailable)
                 : done(null);
-        CompletableFuture<List<StockAlert>> stockAlerts = access.materials ? ask(this::stockAlerts) : done(List.of());
-        CompletableFuture<List<Activity>> activity = recentActivity(access);
+        CompletableFuture<List<StockAlert>> stockAlerts = access.materials
+                ? shown(ask(this::stockAlerts), "stockAlerts", List.of(), unavailable) : done(List.of());
+        CompletableFuture<List<Activity>> activity = recentActivity(access, unavailable);
 
         Map<String, Long> byCurrency = join(currencies);
         String currency = fx.reportingCurrency().getCode();
@@ -141,28 +160,38 @@ public class DashboardService implements DashboardUseCase {
                 .sum();
 
         // ---- Second wave: the amounts, in the reporting currency ----
+        // The invoices to pay feed both their tile and the aging chart: without them, neither is shown (not a 0).
         CompletableFuture<List<DueGroup>> payable = access.invoices
                 ? ask(() -> readModel.outstandingByDueDate("STANDARD", PAYABLE_INVOICES, rates))
                 : done(List.of());
-        CompletableFuture<Kpi> ordersKpi = access.orders ? ordersKpi(today, rates) : done(null);
+        CompletableFuture<Kpi> ordersKpi = access.orders
+                ? shown(ordersKpi(today, rates), "kpi:openOrders", null, unavailable) : done(null);
         CompletableFuture<Kpi> invoicesKpi = access.invoices
-                ? payable.thenApply(groups -> invoicesKpi(today, currency, groups))
+                ? shown(payable.thenApply(groups -> invoicesKpi(today, currency, groups)), "kpi:invoicesToPay", null,
+                        unavailable)
                 : done(null);
-        CompletableFuture<Kpi> paymentsKpi = access.payments ? paymentsKpi(today, rates) : done(null);
+        CompletableFuture<List<AgingBucket>> aging = access.invoices
+                ? shown(payable.thenApply(groups -> invoiceAging(today, groups)), "invoiceAging", List.of(), unavailable)
+                : done(List.of());
+        CompletableFuture<Kpi> paymentsKpi = access.payments
+                ? shown(paymentsKpi(today, rates), "kpi:paidThisMonth", null, unavailable) : done(null);
         CompletableFuture<MonthlyTrend> trend = access.orders || access.invoices || access.payments
-                ? monthlyTrend(access, today, rates)
+                ? shown(monthlyTrend(access, today, rates), "monthlyTrend", null, unavailable)
                 : done(null);
-        CompletableFuture<List<Slice>> categories = access.orders ? ask(() -> spendByCategory(rates)) : done(List.of());
-        CompletableFuture<List<SupplierStats>> suppliers = access.orders ? topSuppliers(rates) : done(List.of());
+        CompletableFuture<List<Slice>> categories = access.orders
+                ? shown(ask(() -> spendByCategory(rates)), "spendByCategory", List.of(), unavailable) : done(List.of());
+        CompletableFuture<List<SupplierStats>> suppliers = access.orders
+                ? shown(topSuppliers(rates), "topSuppliers", List.of(), unavailable) : done(List.of());
         CompletableFuture<CurrencyConversion> conversion = foreign
-                ? ask(() -> conversion(access, currency, byCurrency, latest, unconverted))
+                ? shown(ask(() -> conversion(access, currency, byCurrency, latest, unconverted)), "conversion", null,
+                        unavailable)
                 : done(null);
 
         List<Kpi> kpis = Stream.of(requisitionsKpi, ordersKpi, receiptsKpi, invoicesKpi, paymentsKpi, stockKpi, returnsKpi)
                 .map(DashboardService::join)
                 .filter(Objects::nonNull)
                 .toList();
-        return new DashboardOutput(
+        DashboardOutput output = new DashboardOutput(
                 LocalDateTime.now(clock),
                 currency,
                 unconverted,
@@ -172,10 +201,32 @@ public class DashboardService implements DashboardUseCase {
                 join(categories),
                 join(suppliers),
                 join(receiptQuality),
-                access.invoices ? invoiceAging(today, join(payable)) : List.of(),
+                join(aging),
                 join(stockAlerts),
                 join(activity),
-                join(conversion));
+                join(conversion),
+                unavailable.stream().sorted().toList());
+        if (!unavailable.isEmpty()) {
+            log.warn("Dashboard shown without {}: their services did not answer", output.unavailable());
+        }
+        return output;
+    }
+
+    /**
+     * A figure, or {@code fallback} when its service did not answer ({@link FigureUnavailableException}), with
+     * {@code section} added to {@code unavailable}. Any other failure goes through.
+     */
+    private static <T> CompletableFuture<T> shown(CompletableFuture<T> figure, String section, T fallback,
+                                                  Set<String> unavailable) {
+        return figure.exceptionally(failure -> {
+            Throwable cause = failure instanceof CompletionException && failure.getCause() != null
+                    ? failure.getCause() : failure;
+            if (cause instanceof FigureUnavailableException) {
+                unavailable.add(section);
+                return fallback;
+            }
+            throw failure instanceof CompletionException completion ? completion : new CompletionException(cause);
+        });
     }
 
     /** An aggregate, asked for on the executor. */
@@ -442,8 +493,11 @@ public class DashboardService implements DashboardUseCase {
         return "REORDER_NEEDED";
     }
 
-    /** The latest documents created in the modules the user can read. */
-    private CompletableFuture<List<Activity>> recentActivity(Access access) {
+    /**
+     * The latest documents created in the modules the user can read; a module whose service does not answer is left
+     * out, the others are shown.
+     */
+    private CompletableFuture<List<Activity>> recentActivity(Access access, Set<String> unavailable) {
         List<CompletableFuture<List<Activity>>> modules = new ArrayList<>();
         if (access.requisitions) modules.add(activity(ActivitySource.REQUISITION, "REQUISITION", "/requisitions/view/"));
         if (access.orders) modules.add(activity(ActivitySource.PURCHASE_ORDER, "PURCHASE_ORDER", "/purchase-orders/"));
@@ -451,6 +505,7 @@ public class DashboardService implements DashboardUseCase {
         if (access.invoices) modules.add(activity(ActivitySource.INVOICE, "INVOICE", "/invoices/"));
         if (access.payments) modules.add(activity(ActivitySource.PAYMENT, "PAYMENT", "/payments/"));
         if (access.returns) modules.add(activity(ActivitySource.RETURN, "RETURN", "/returns/"));
+        modules.replaceAll(module -> shown(module, "recentActivity", List.of(), unavailable));
         return CompletableFuture.allOf(modules.toArray(CompletableFuture[]::new)).thenApply(all -> modules.stream()
                 .flatMap(module -> module.join().stream())
                 .sorted(Comparator.comparing(Activity::date).reversed())

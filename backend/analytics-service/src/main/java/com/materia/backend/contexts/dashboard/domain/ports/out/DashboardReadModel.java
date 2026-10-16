@@ -20,6 +20,17 @@ import java.util.UUID;
  */
 public interface DashboardReadModel {
 
+    /**
+     * A figure the service holding it could not give: unreachable, too slow or overloaded (a service still starting,
+     * a deploy). The dashboard shows the other figures and lists this one as unavailable; any other failure is a bug
+     * and fails the dashboard.
+     */
+    class FigureUnavailableException extends RuntimeException {
+        public FigureUnavailableException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
     /** An amount for one month. */
     /**
      * How amounts are brought into the reporting currency: a document with its own rate copy (made for this reporting
