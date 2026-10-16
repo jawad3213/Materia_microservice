@@ -29,7 +29,8 @@ aws/
 │   └── github_deploy_role/    OIDC role: ECR push + SSM SendCommand on this instance only
 ├── environments/
 │   ├── staging/               main.tf, variables.tf, outputs.tf, providers.tf, *.example
-│   └── prod/                  same files, own state key and values
+│   ├── prod/                  same files, own state key and values
+│   └── fargate-test/          a throwaway copy on ECS Fargate: ./up.sh, ./down.sh (see its README)
 └── deploy/
     ├── docker-compose.yml     stack run on the instance
     └── deploy.sh              run on the instance by SSM: .env from Parameter Store, pull, up, health check, rollback
