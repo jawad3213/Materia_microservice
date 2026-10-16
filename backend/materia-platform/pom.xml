@@ -24,7 +24,10 @@
             <groupId>com.materia</groupId>
             <artifactId>materia-grpc</artifactId>
         </dependency>
-        <!-- Attachment files in S3 (app.attachments.storage=s3): the synchronous client only -->
+        <!-- Attachment files in S3 (app.attachments.storage=s3): the synchronous client, over the JDK's HTTP client.
+             Not the SDK's Apache clients: Apache HttpClient 5 on the classpath would also become Spring's client for
+             RestClient/RestTemplate in every service, and brings httpcore5 (CVE-2026-54399, CVE-2026-54428 at the
+             version Spring Boot pins). -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
@@ -33,7 +36,19 @@
                     <groupId>software.amazon.awssdk</groupId>
                     <artifactId>netty-nio-client</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache5-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
             </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
         </dependency>
         <!-- The network transport every service serves its contracts on and calls the others with -->
         <dependency>

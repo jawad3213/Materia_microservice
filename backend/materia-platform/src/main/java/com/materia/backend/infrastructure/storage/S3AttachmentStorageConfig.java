@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
@@ -33,7 +34,9 @@ public class S3AttachmentStorageConfig {
     public S3Client attachmentsS3Client(@Value("${app.attachments.s3.region:}") String region,
                                         @Value("${app.attachments.s3.endpoint:}") String endpoint,
                                         @Value("${app.attachments.s3.path-style:false}") boolean pathStyle) {
-        S3ClientBuilder builder = S3Client.builder().forcePathStyle(pathStyle);
+        // The JDK's HTTP client: attachments are few and small, and it keeps Apache HttpClient off the classpath
+        S3ClientBuilder builder = S3Client.builder().httpClientBuilder(UrlConnectionHttpClient.builder())
+                .forcePathStyle(pathStyle);
         if (!region.isBlank()) {
             builder.region(Region.of(region.trim()));
         } else if (!endpoint.isBlank()) {
