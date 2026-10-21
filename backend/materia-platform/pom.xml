@@ -98,6 +98,14 @@
             <artifactId>jjwt-jackson</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!--
+          Verification of Keycloak's tokens against its JWK set (NimbusJwtDecoder), while services move from Identity's
+          tokens to Keycloak's. Only the JOSE library: the resource server starter would bring its own security chain.
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-jose</artifactId>
+        </dependency>
         <!-- JSON log lines (logback-spring.xml) -->
         <dependency>
             <groupId>net.logstash.logback</groupId>

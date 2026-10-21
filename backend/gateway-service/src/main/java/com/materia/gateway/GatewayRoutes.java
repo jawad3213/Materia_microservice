@@ -1,11 +1,21 @@
 package com.materia.gateway;
 
+import com.nimbusds.jwt.JWTParser;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
+import reactor.core.publisher.Mono;
+
+import java.text.ParseException;
+import java.util.Collection;
 
 /**
  * What the gateway exposes. Everything else (actuator, internal endpoints) answers 404 here: only the REST API, its
@@ -50,9 +60,30 @@ public class GatewayRoutes {
                 .build();
     }
 
-    /** Verifies RS256 tokens with Identity's JWK set, fetched on first use and refreshed when the key changes. */
+    /**
+     * Verifies RS256 tokens with Identity's JWK set, fetched on first use and refreshed when the key changes. With
+     * Keycloak enabled, a token naming the realm as its issuer is verified with the realm's keys instead, and must be
+     * meant for the API (docs/architecture/keycloak-migration.md).
+     */
     @Bean
     public ReactiveJwtDecoder jwtDecoder(GatewayProperties gateway) {
-        return NimbusReactiveJwtDecoder.withJwkSetUri(gateway.jwksUri()).build();
+        ReactiveJwtDecoder identity = NimbusReactiveJwtDecoder.withJwkSetUri(gateway.jwksUri()).build();
+        GatewayProperties.Keycloak realm = gateway.keycloak();
+        if (!realm.enabled()) return identity;
+
+        NimbusReactiveJwtDecoder keycloak = NimbusReactiveJwtDecoder.withJwkSetUri(realm.jwkSetUri()).build();
+        keycloak.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(realm.issuerUri()),
+                new JwtClaimValidator<Collection<String>>(JwtClaimNames.AUD,
+                        aud -> aud != null && aud.contains(realm.audience()))));
+        return token -> {
+            try {
+                return realm.issuerUri().equals(JWTParser.parse(token).getJWTClaimsSet().getIssuer())
+                        ? keycloak.decode(token)
+                        : identity.decode(token);
+            } catch (ParseException e) {
+                return Mono.error(new BadJwtException("Malformed token", e));
+            }
+        };
     }
 }

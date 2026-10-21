@@ -10,7 +10,7 @@ SQL or JPQL query names another context's table or entity.
 | Service | Contexts | Notes |
 |---|---|---|
 | API gateway | `gateway` | Validates JWTs, routes, rate-limits, traces (`X-Gateway-Trace-Id`). |
-| Identity | `auth`, `employee` | Issues RS256 tokens (`TokenIssuer`) and publishes their public key at `/.well-known/jwks.json`; owns users and employees. |
+| Identity | `auth`, `employee` | Issues RS256 tokens (`TokenIssuer`) and publishes their public key at `/.well-known/jwks.json`; owns users and employees. Sign-in is moving to Keycloak (`keycloak-migration.md`). |
 | Master data | `masterData` | Materials, categories, suppliers, stock levels. |
 | Procurement | `purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor` | One flow: PR → PO → GR → RTV. |
 | Finance | `invoice`, `payment`, `settings` | Three-way match, payments, and the settings they use (price tolerance). |

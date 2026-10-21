@@ -12,6 +12,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.util.Collection;
+import java.util.Map;
+
 /**
  * Refuses a request whose bearer token is forged, expired or a service token (401) before it reaches any service.
  * A request without a token goes on: whether its path needs one is the service's decision (sign-in, password
@@ -43,9 +46,15 @@ public class BearerTokenFilter implements GlobalFilter, Ordered {
                         e -> ErrorResponses.write(exchange, HttpStatus.UNAUTHORIZED, "Invalid or expired token"));
     }
 
-    /** Service tokens travel between services only (JwtTokenProvider.generateServiceToken). */
-    private static boolean isServiceToken(Jwt jwt) {
-        return Boolean.TRUE.equals(jwt.getClaim("svc"));
+    /**
+     * Service tokens travel between services only: Identity's (JwtTokenProvider.generateServiceToken), and a Keycloak
+     * service account's (realm role SERVICE, KeycloakTokens).
+     */
+    static boolean isServiceToken(Jwt jwt) {
+        if (Boolean.TRUE.equals(jwt.getClaim("svc"))) return true;
+        Map<String, Object> realmAccess = jwt.getClaimAsMap("realm_access");
+        return realmAccess != null && realmAccess.get("roles") instanceof Collection<?> roles
+                && roles.contains("SERVICE");
     }
 
     /** After the trace id and the rate limit, so a flood of bad tokens is throttled before any signature check. */

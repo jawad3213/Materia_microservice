@@ -1,8 +1,10 @@
 package com.materia.backend.infrastructure.grpc;
 
+import com.materia.backend.gateway.security.AccessTokens;
 import com.materia.backend.gateway.security.JwtTokenProvider;
 import com.materia.grpc.auth.Caller;
 import com.materia.grpc.auth.TokenVerifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
@@ -12,16 +14,21 @@ import java.util.Optional;
 @Component
 public class JwtTokenVerifier implements TokenVerifier {
 
-    private final JwtTokenProvider jwt;
+    private final AccessTokens tokens;
 
+    @Autowired
+    public JwtTokenVerifier(AccessTokens tokens) {
+        this.tokens = tokens;
+    }
+
+    /** Identity's tokens only. */
     public JwtTokenVerifier(JwtTokenProvider jwt) {
-        this.jwt = jwt;
+        this(new AccessTokens(jwt, null));
     }
 
     @Override
     public Optional<Caller> verify(String token) {
-        if (!jwt.validateAccessToken(token)) return Optional.empty();
-        return Optional.of(new Caller(jwt.getSubjectFromAccessToken(token),
-                jwt.getAuthoritiesFromAccessToken(token).stream().map(GrantedAuthority::getAuthority).toList()));
+        return tokens.verify(token).map(verified -> new Caller(verified.subject(),
+                verified.authorities().stream().map(GrantedAuthority::getAuthority).toList()));
     }
 }

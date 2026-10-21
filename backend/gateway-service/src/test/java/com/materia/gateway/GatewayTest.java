@@ -37,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The gateway in front of two stand-in services, procurement and Identity (which publishes the JWK set), that record
- * what reaches them: what is routed where, what is refused before a service sees it, and what a service receives.
+ * what reaches them: what is routed where, what is refused before a service sees it, and what a service receives. A
+ * stand-in Keycloak publishes the realm's keys, whose tokens are accepted beside Identity's.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "management.server.port=0",
@@ -46,7 +47,9 @@ class GatewayTest {
 
     private static final KeyPair KEYS = rsa();
     private static final KeyPair OTHER_KEYS = rsa();
+    private static final KeyPair KEYCLOAK_KEYS = rsa();
     private static final String KEY_ID = "test-key";
+    private static final String KEYCLOAK_KEY_ID = "keycloak-key";
 
     /** Requests the stand-in services received, with which one and the headers that matter. */
     private static final List<Map<String, String>> RECEIVED = new CopyOnWriteArrayList<>();
@@ -55,6 +58,8 @@ class GatewayTest {
     private static final HttpServer MASTER_DATA = service("masterdata");
     private static final HttpServer FINANCE = service("finance");
     private static final HttpServer ANALYTICS = service("analytics");
+    private static final HttpServer KEYCLOAK = keycloak();
+    private static final String KEYCLOAK_ISSUER = "http://localhost:" + KEYCLOAK.getAddress().getPort() + "/realms/materia";
 
     @DynamicPropertySource
     static void routes(DynamicPropertyRegistry registry) {
@@ -63,6 +68,7 @@ class GatewayTest {
         registry.add("gateway.master-data-uri", () -> "http://localhost:" + MASTER_DATA.getAddress().getPort());
         registry.add("gateway.finance-uri", () -> "http://localhost:" + FINANCE.getAddress().getPort());
         registry.add("gateway.analytics-uri", () -> "http://localhost:" + ANALYTICS.getAddress().getPort());
+        registry.add("gateway.keycloak.issuer-uri", () -> KEYCLOAK_ISSUER);
     }
 
     @AfterAll
@@ -72,6 +78,7 @@ class GatewayTest {
         MASTER_DATA.stop(0);
         FINANCE.stop(0);
         ANALYTICS.stop(0);
+        KEYCLOAK.stop(0);
     }
 
     @Autowired private WebTestClient client;
@@ -115,6 +122,19 @@ class GatewayTest {
         }
     }
 
+    private static HttpServer keycloak() {
+        try {
+            HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+            String jwks = new JWKSet(new RSAKey.Builder((RSAPublicKey) KEYCLOAK_KEYS.getPublic())
+                    .keyID(KEYCLOAK_KEY_ID).build()).toString();
+            server.createContext("/realms/materia/protocol/openid-connect/certs", exchange -> reply(exchange, 200, jwks));
+            server.start();
+            return server;
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private static void reply(com.sun.net.httpserver.HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -133,6 +153,27 @@ class GatewayTest {
             claims.forEach(set::claim);
             SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEY_ID)
                     .type(JOSEObjectType.JWT).build(), set.build());
+            jwt.sign(new RSASSASigner((RSAPrivateKey) keys.getPrivate()));
+            return jwt.serialize();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** A token the realm issued, signed with the given key (Keycloak's own, unless the test forges one). */
+    private static String keycloakToken(KeyPair keys, List<String> audience, List<String> realmRoles) {
+        try {
+            JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                    .issuer(KEYCLOAK_ISSUER)
+                    .subject(UUID.randomUUID().toString())
+                    .audience(audience)
+                    .issueTime(new Date())
+                    .expirationTime(new Date(System.currentTimeMillis() + 60_000))
+                    .claim("azp", "materia-frontend")
+                    .claim("realm_access", Map.of("roles", realmRoles))
+                    .build();
+            SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEYCLOAK_KEY_ID)
+                    .type(JOSEObjectType.JWT).build(), claims);
             jwt.sign(new RSASSASigner((RSAPrivateKey) keys.getPrivate()));
             return jwt.serialize();
         } catch (Exception e) {
@@ -276,6 +317,34 @@ class GatewayTest {
                         Map.of("svc", true, "roles", "ROLE_SERVICE")))
                 .exchange()
                 .expectStatus().isUnauthorized();
+
+        assertThat(RECEIVED).isEmpty();
+    }
+
+    @Test
+    @DisplayName("gateway: a Keycloak user's token for the API is routed with the token")
+    void keycloakUserToken_isRouted() {
+        String token = keycloakToken(KEYCLOAK_KEYS, List.of("materia-api", "account"), List.of("ADMIN"));
+
+        client.get().uri("/api/v1/invoices").header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk();
+
+        assertThat(RECEIVED).extracting(r -> r.get("authorization")).containsExactly("Bearer " + token);
+    }
+
+    @Test
+    @DisplayName("gateway: a Keycloak token for another audience, of a service account, or not signed by Keycloak is 401")
+    void keycloakTokens_refused() {
+        for (String token : List.of(
+                keycloakToken(KEYCLOAK_KEYS, List.of("account"), List.of("ADMIN")),
+                keycloakToken(KEYCLOAK_KEYS, List.of("materia-api"), List.of("SERVICE")),
+                // Naming the realm as issuer: verified with the realm's keys, never Identity's
+                keycloakToken(KEYS, List.of("materia-api"), List.of("ADMIN")))) {
+            client.get().uri("/api/v1/invoices").header("Authorization", "Bearer " + token)
+                    .exchange()
+                    .expectStatus().isUnauthorized();
+        }
 
         assertThat(RECEIVED).isEmpty();
     }
