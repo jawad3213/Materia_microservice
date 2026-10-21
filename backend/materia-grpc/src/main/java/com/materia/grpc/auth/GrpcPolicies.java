@@ -2,7 +2,6 @@ package com.materia.grpc.auth;
 
 import com.materia.proto.audit.v1.ChangeHistoryGrpc;
 import com.materia.proto.finance.v1.FinanceMetricsGrpc;
-import com.materia.proto.identity.v1.ServiceTokensGrpc;
 import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
@@ -24,8 +23,8 @@ import java.util.Optional;
  * the contracts' tests).
  *
  * <p>Users reach these RPCs with their own token, which a service forwards while it serves their request; services
- * reach them with their service token for work no user started. The service names are their client ids
- * ({@code app.service-client.id}): procurement, masterdata, finance, analytics.
+ * reach them with their service token (Keycloak's, client credentials) for work no user started. The service names
+ * are their client ids ({@code app.service-client.id}): procurement, masterdata, finance, analytics.
  */
 public final class GrpcPolicies {
 
@@ -33,8 +32,6 @@ public final class GrpcPolicies {
 
     static {
         // ---- identity.v1 ----
-        // Asking for a service token is how a service gets one.
-        put(ServiceTokensGrpc.getIssueServiceTokenMethod(), RpcPolicy.open());
         // Names and roles of accounts: every service shows who did what (change history, attachments, documents) and
         // procurement picks requesters and receivers, for any user and for its own jobs.
         put(UserDirectoryGrpc.getFindUserMethod(), RpcPolicy.authenticated());

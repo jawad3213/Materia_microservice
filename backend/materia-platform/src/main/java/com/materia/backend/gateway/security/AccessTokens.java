@@ -22,10 +22,10 @@ public class AccessTokens {
     @Autowired
     public AccessTokens(JwtTokenProvider identity,
                         @Value("${app.keycloak.issuer-uri:}") String keycloakIssuer,
-                        @Value("${app.keycloak.jwk-set-uri:}") String keycloakJwkSetUri,
+                        @Value("${app.keycloak.realm-uri:}") String keycloakRealmUri,
                         @Value("${app.keycloak.audience:materia-api}") String keycloakAudience) {
         this(identity, StringUtils.hasText(keycloakIssuer)
-                ? new KeycloakTokens(keycloakIssuer, keycloakJwkSetUri, keycloakAudience)
+                ? new KeycloakTokens(keycloakIssuer, keycloakRealmUri, keycloakAudience)
                 : null);
     }
 

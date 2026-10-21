@@ -40,13 +40,13 @@ public class KeycloakTokens {
 
     /**
      * @param issuer    the realm's issuer, as tokens state it ({@code https://<host>/realms/materia})
-     * @param jwkSetUri where this service reaches the realm's keys; the issuer's own when blank (Keycloak may be
-     *                  reached at another address from inside the network than the one tokens name)
+     * @param realmUri  where this service reaches the realm; the issuer when blank (Keycloak may be reached at another
+     *                  address from inside the network than the one tokens name)
      * @param audience  the API client every accepted token must be meant for
      */
-    public KeycloakTokens(String issuer, String jwkSetUri, String audience) {
+    public KeycloakTokens(String issuer, String realmUri, String audience) {
         this(issuer, audience, NimbusJwtDecoder
-                .withJwkSetUri(StringUtils.hasText(jwkSetUri) ? jwkSetUri : issuer + "/protocol/openid-connect/certs")
+                .withJwkSetUri((StringUtils.hasText(realmUri) ? realmUri : issuer) + "/protocol/openid-connect/certs")
                 .build());
     }
 

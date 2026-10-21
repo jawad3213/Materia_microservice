@@ -33,21 +33,24 @@ public record GatewayProperties(String procurementUri, String identityUri, Strin
 
     /**
      * @param issuerUri the realm's issuer, as tokens state it; Keycloak's tokens are refused while it is blank
-     * @param jwkSetUri where the gateway reaches the realm's keys; the issuer's own when not set
+     * @param realmUri  where the gateway reaches the realm; the issuer when not set
      * @param audience  the API client every Keycloak token must be meant for
      */
-    public record Keycloak(String issuerUri, String jwkSetUri, String audience) {
+    public record Keycloak(String issuerUri, String realmUri, String audience) {
 
         public Keycloak {
             if (issuerUri != null && issuerUri.isBlank()) issuerUri = null;
-            if ((jwkSetUri == null || jwkSetUri.isBlank()) && issuerUri != null) {
-                jwkSetUri = issuerUri + "/protocol/openid-connect/certs";
-            }
+            if (realmUri == null || realmUri.isBlank()) realmUri = issuerUri;
             if (audience == null || audience.isBlank()) audience = "materia-api";
         }
 
         public boolean enabled() {
             return issuerUri != null;
+        }
+
+        /** The realm's keys. */
+        public String jwkSetUri() {
+            return realmUri + "/protocol/openid-connect/certs";
         }
     }
 
