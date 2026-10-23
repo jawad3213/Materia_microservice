@@ -116,5 +116,6 @@ services:
     build:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        VITE_KEYCLOAK_URL: http://localhost:${KEYCLOAK_PORT:-8180}/auth
     ports:
       - "${FRONTEND_PORT}:80"

@@ -19,10 +19,7 @@ export function signInAs(role: MatrixRole, userId = `user-${role.toLowerCase()}`
     login: vi.fn(),
     logout: vi.fn(),
     changePassword: vi.fn(),
-    clearMustChangePassword: vi.fn(),
     updateUser: vi.fn(),
-    resetPassword: vi.fn(),
-    confirmPasswordReset: vi.fn(),
     clearError: vi.fn(),
   } as unknown as ReturnType<typeof useAuthModule.default>);
   return userId;
