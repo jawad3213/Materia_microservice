@@ -85,7 +85,7 @@ env_value() {
 
 # Each service's database user, owning its schema and nothing else (one database per service)
 apply_db_roles() {
-  docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1     -U "$(env_value POSTGRES_USER)" -d "$(env_value POSTGRES_DB)"     -v identity_password="$(env_value DB_PASSWORD_IDENTITY)"     -v masterdata_password="$(env_value DB_PASSWORD_MASTERDATA)"     -v procurement_password="$(env_value DB_PASSWORD_PROCUREMENT)"     -v finance_password="$(env_value DB_PASSWORD_FINANCE)"     -v analytics_password="$(env_value DB_PASSWORD_ANALYTICS)"     -f - <db/service-roles.sql
+  docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1     -U "$(env_value POSTGRES_USER)" -d "$(env_value POSTGRES_DB)"     -v identity_password="$(env_value DB_PASSWORD_IDENTITY)"     -v masterdata_password="$(env_value DB_PASSWORD_MASTERDATA)"     -v procurement_password="$(env_value DB_PASSWORD_PROCUREMENT)"     -v finance_password="$(env_value DB_PASSWORD_FINANCE)"     -v analytics_password="$(env_value DB_PASSWORD_ANALYTICS)"     -v keycloak_password="$(env_value DB_PASSWORD_KEYCLOAK)"     -f - <db/service-roles.sql
   log "Database users applied"
 }
 

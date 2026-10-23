@@ -3,18 +3,10 @@ package com.materia.backend.contexts.auth.domain.ports.out;
 /**
  * 🔹 EMAIL SENDER PORT (OUTPUT PORT)
  * 
- * Defines the contract for dispatching transactional authentication emails.
+ * Defines the contract for dispatching transactional account emails (password resets are Keycloak's own).
  * Pure domain interface — decoupled from Spring Mail or SMTP implementations.
  */
 public interface EmailSender {
-
-    /**
-     * Sends a password reset email with the reset link containing token & email.
-     *
-     * @param toEmail   Recipient email address
-     * @param resetToken Generated secure reset token
-     */
-    void sendPasswordResetEmail(String toEmail, String resetToken);
 
     /**
      * Sends the temporary password generated when an account is provisioned

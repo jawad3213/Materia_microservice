@@ -2,6 +2,7 @@ package com.materia.backend.contexts.auth.infrastructure.bootstrap;
 
 import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
+import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,7 +10,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,17 +22,18 @@ import static org.mockito.Mockito.*;
 class AdminAccountBootstrapTest {
 
     @Mock private UserRepository users;
-    @Mock private PasswordEncoder encoder;
+    @Mock private IdentityProvider identityProvider;
 
     private AdminAccountBootstrap bootstrap(String email, String password) {
-        return new AdminAccountBootstrap(users, encoder, email, password);
+        return new AdminAccountBootstrap(users, identityProvider, email, password);
     }
 
     @Test
     @DisplayName("rule: with no account, an administrator is created who must change the password at first sign-in")
     void emptyDatabase_createsAdmin() {
+        UUID id = UUID.randomUUID();
         when(users.count()).thenReturn(0L);
-        when(encoder.encode("Start1!pass")).thenReturn("hashed");
+        when(identityProvider.createAccount(any(User.class), eq("Start1!pass"), eq(true))).thenReturn(id);
 
         assertThat(bootstrap(" Admin@Materia.ma ", "Start1!pass").createIfNoAccount()).isTrue();
 
@@ -38,8 +41,9 @@ class AdminAccountBootstrapTest {
         verify(users).save(saved.capture());
         assertThat(saved.getValue().getEmail()).isEqualTo("admin@materia.ma");
         assertThat(saved.getValue().getRole()).isEqualTo(Role.ADMIN);
-        assertThat(saved.getValue().getPasswordHash()).isEqualTo("hashed");
-        assertThat(saved.getValue().isMustChangePassword()).isTrue();
+        // The password lives in Keycloak only, temporary; the directory entry takes the account's id
+        assertThat(saved.getValue().getPasswordHash()).isNull();
+        assertThat(saved.getValue().getId()).isEqualTo(id);
     }
 
     @Test
@@ -62,6 +66,6 @@ class AdminAccountBootstrapTest {
         assertThat(bootstrap("admin@materia.ma", "password").createIfNoAccount()).isFalse();
 
         verify(users, never()).save(any());
-        verifyNoInteractions(encoder);
+        verifyNoInteractions(identityProvider);
     }
 }

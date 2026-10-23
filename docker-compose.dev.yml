@@ -38,34 +38,12 @@ services:
       - materia-net
 
   # -----------------------------------------------------------------
-  # Keycloak (Dev only, for now): the identity provider sign-in is moving to (docs/architecture/keycloak-migration.md).
-  # Imports the materia realm (keycloak/materia-realm.json) on first start: roles and permissions as in identity, the
-  # web app's client, one client per service, and the three dev accounts with APP_SEED_PASSWORD. Its data lives in the
-  # container: recreating it starts again from the realm file. Admin console on KEYCLOAK_PORT.
-  # Tokens name http://localhost:KEYCLOAK_PORT as issuer; the services fetch its keys at http://keycloak:8080.
+  # Keycloak (Dev: admin console and sign-in pages exposed on KEYCLOAK_PORT)
   # -----------------------------------------------------------------
   keycloak:
-    image: quay.io/keycloak/keycloak:26.3
-    container_name: materia-keycloak
     restart: unless-stopped
-    command: ["start-dev", "--import-realm"]
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}
-      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
-      # Read by the realm file's placeholders
-      APP_SEED_PASSWORD: ${APP_SEED_PASSWORD:-Materia.Dev1!}
-      SERVICE_CLIENT_PROCUREMENT_SECRET: ${SERVICE_CLIENT_PROCUREMENT_SECRET:-${SERVICE_CLIENT_MONOLITH_SECRET:-}}
-      SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
-      SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
-      SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
-    volumes:
-      - ./keycloak/materia-realm.json:/opt/keycloak/data/import/materia-realm.json:ro
     ports:
       - "${KEYCLOAK_PORT:-8180}:8080"
-    networks:
-      - materia-net
 
   # -----------------------------------------------------------------
   # Procurement (Dev: dev profile, CORS for localhost, exposed port 8080)
@@ -77,9 +55,6 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
-      # Keycloak's tokens too, besides identity's (docs/architecture/keycloak-migration.md)
-      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/materia
-      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/materia/protocol/openid-connect/certs
 
   # -----------------------------------------------------------------
   # Identity (Dev: dev profile, which seeds the dev accounts; exposed on IDENTITY_PORT)
@@ -91,9 +66,6 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
-      # Keycloak's tokens too, besides identity's (docs/architecture/keycloak-migration.md)
-      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/materia
-      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/materia/protocol/openid-connect/certs
 
   # -----------------------------------------------------------------
   # Master data (Dev: dev profile, which seeds the demo catalogue; exposed on MASTERDATA_PORT)
@@ -105,9 +77,6 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
-      # Keycloak's tokens too, besides identity's (docs/architecture/keycloak-migration.md)
-      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/materia
-      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/materia/protocol/openid-connect/certs
 
   # -----------------------------------------------------------------
   # Finance (Dev: dev profile, which seeds the demo invoices and payments; exposed on FINANCE_PORT)
@@ -119,9 +88,6 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
-      # Keycloak's tokens too, besides identity's (docs/architecture/keycloak-migration.md)
-      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/materia
-      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/materia/protocol/openid-connect/certs
 
   # -----------------------------------------------------------------
   # Analytics (Dev: dev profile; exposed on ANALYTICS_PORT)
@@ -133,9 +99,6 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
-      # Keycloak's tokens too, besides identity's (docs/architecture/keycloak-migration.md)
-      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/materia
-      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/materia/protocol/openid-connect/certs
 
   # -----------------------------------------------------------------
   # Gateway (Dev: exposed on GATEWAY_PORT, to call the API the way the frontend does)
@@ -144,10 +107,6 @@ services:
     restart: unless-stopped
     ports:
       - "${GATEWAY_PORT:-8090}:8080"
-    environment:
-      # Keycloak's tokens too, besides identity's (docs/architecture/keycloak-migration.md)
-      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/materia
-      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/materia/protocol/openid-connect/certs
 
   # -----------------------------------------------------------------
   # Frontend (Dev: exposed frontend port, pointing to API)

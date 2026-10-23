@@ -2,7 +2,7 @@
   "realm": "materia",
   "displayName": "Materia",
   "enabled": true,
-  "sslRequired": "external",
+  "sslRequired": "${KEYCLOAK_SSL_REQUIRED}",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "registrationEmailAsUsername": true,
@@ -269,15 +269,16 @@
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://localhost:5173/*",
-        "http://localhost:3000/*"
+        "${MATERIA_APP_URL}/*",
+        "${MATERIA_DEV_APP_URL}/*"
       ],
       "webOrigins": [
-        "+"
+        "${MATERIA_APP_URL}",
+        "${MATERIA_DEV_APP_URL}"
       ],
       "attributes": {
-        "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:3000/*"
+        "pkce.code.challenge.method": "${KEYCLOAK_PKCE_METHOD}",
+        "post.logout.redirect.uris": "${MATERIA_APP_URL}/*##${MATERIA_DEV_APP_URL}/*"
       },
       "protocolMappers": [
         {
@@ -291,31 +292,9 @@
             "introspection.token.claim": "true"
           }
         }
-      ]
-    },
-    {
-      "clientId": "materia-dev-tools",
-      "name": "Materia dev tools (local only)",
-      "description": "Password grant for curl and tests on a developer machine. Never create it outside dev.",
-      "enabled": true,
-      "publicClient": true,
-      "standardFlowEnabled": false,
-      "directAccessGrantsEnabled": true,
-      "implicitFlowEnabled": false,
-      "serviceAccountsEnabled": false,
-      "protocolMappers": [
-        {
-          "name": "materia-api audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "config": {
-            "included.client.audience": "materia-api",
-            "access.token.claim": "true",
-            "id.token.claim": "false",
-            "introspection.token.claim": "true"
-          }
-        }
-      ]
+      ],
+      "rootUrl": "${MATERIA_APP_URL}",
+      "baseUrl": "/"
     },
     {
       "clientId": "procurement",
@@ -420,6 +399,32 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "identity",
+      "name": "Materia identity service",
+      "description": "Client credentials: identity creates, renames and disables the accounts of employees (realm-management).",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SERVICE_CLIENT_IDENTITY_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [
@@ -456,58 +461,30 @@
       ]
     },
     {
-      "username": "admin@materia.com",
-      "email": "admin@materia.com",
-      "emailVerified": true,
-      "firstName": "Amina",
-      "lastName": "Benali",
+      "username": "service-account-identity",
       "enabled": true,
+      "serviceAccountClientId": "identity",
       "realmRoles": [
-        "ADMIN"
+        "SERVICE"
       ],
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${APP_SEED_PASSWORD}",
-          "temporary": false
-        }
-      ]
-    },
-    {
-      "username": "purchaser@materia.com",
-      "email": "purchaser@materia.com",
-      "emailVerified": true,
-      "firstName": "Youssef",
-      "lastName": "El Alami",
-      "enabled": true,
-      "realmRoles": [
-        "PURCHASER"
-      ],
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${APP_SEED_PASSWORD}",
-          "temporary": false
-        }
-      ]
-    },
-    {
-      "username": "receiver@materia.com",
-      "email": "receiver@materia.com",
-      "emailVerified": true,
-      "firstName": "Leila",
-      "lastName": "Amrani",
-      "enabled": true,
-      "realmRoles": [
-        "RECEIVER"
-      ],
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${APP_SEED_PASSWORD}",
-          "temporary": false
-        }
-      ]
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users"
+        ]
+      }
     }
-  ]
+  ],
+  "loginTheme": "keycloak",
+  "smtpServer": {
+    "host": "${KEYCLOAK_SMTP_HOST}",
+    "port": "${KEYCLOAK_SMTP_PORT}",
+    "from": "${KEYCLOAK_SMTP_FROM}",
+    "fromDisplayName": "Materia",
+    "auth": "${KEYCLOAK_SMTP_AUTH}",
+    "user": "${KEYCLOAK_SMTP_USER}",
+    "password": "${KEYCLOAK_SMTP_PASSWORD}",
+    "starttls": "${KEYCLOAK_SMTP_STARTTLS}"
+  }
 }

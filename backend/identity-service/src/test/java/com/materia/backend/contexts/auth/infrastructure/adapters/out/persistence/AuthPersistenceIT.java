@@ -1,12 +1,8 @@
 package com.materia.backend.contexts.auth.infrastructure.adapters.out.persistence;
 
-import com.materia.backend.contexts.auth.domain.entities.PasswordResetToken;
-import com.materia.backend.contexts.auth.domain.entities.RefreshToken;
 import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.auth.domain.enums.UserStatus;
-import com.materia.backend.contexts.auth.domain.ports.out.PasswordResetTokenRepository;
-import com.materia.backend.contexts.auth.domain.ports.out.RefreshTokenRepository;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import com.materia.backend.support.AbstractIntegrationTest;
 import jakarta.persistence.EntityManager;
@@ -15,20 +11,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Auth persistence adapters against real PostgreSQL with the migrated schema (T046, T047).
+ * The user persistence adapter against real PostgreSQL with the migrated schema (T046, T047).
  * Each test rolls back, and fixtures use unique emails to avoid the seed accounts.
  */
 class AuthPersistenceIT extends AbstractIntegrationTest {
 
     @Autowired private UserRepository users;
-    @Autowired private RefreshTokenRepository refreshTokens;
-    @Autowired private PasswordResetTokenRepository resetTokens;
     @PersistenceContext private EntityManager em;
 
     private static String uniqueEmail() {
@@ -74,15 +67,15 @@ class AuthPersistenceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("users: lookup matches the stored form exactly, so callers must normalise first, as AuthService does")
+    @DisplayName("users: lookup matches the stored form exactly, so callers must normalise first, as account provisioning does")
     void user_lookupIsExactMatch() {
         String email = uniqueEmail();
         users.save(newUser(email));
         flushAndClear();
 
         assertTrue(users.findByEmail(email).isPresent());
-        // Documents actual behaviour: the adapter does not normalise. AuthService trims and
-        // lower-cases before calling, verified in AuthServiceBehaviourTest.
+        // Documents actual behaviour: the adapter does not normalise. AccountProvisioningService trims and
+        // lower-cases before calling.
         assertTrue(users.findByEmail(email.toUpperCase()).isEmpty());
         assertTrue(users.existsByEmail(email));
     }
@@ -96,60 +89,5 @@ class AuthPersistenceIT extends AbstractIntegrationTest {
 
         users.save(newUser(email.toUpperCase()));
         assertThrows(RuntimeException.class, this::flushAndClear);
-    }
-
-    @Test
-    @DisplayName("refresh tokens: revoking all for a user revokes every one of their tokens and nobody else's")
-    void refreshTokens_revokeAllForUser() {
-        User owner = users.save(newUser(uniqueEmail()));
-        User other = users.save(newUser(uniqueEmail()));
-        flushAndClear();
-
-        LocalDateTime later = LocalDateTime.now().plusDays(1);
-        refreshTokens.save(RefreshToken.builder().userId(owner.getId()).token("a-" + UUID.randomUUID()).expiryDate(later).build());
-        refreshTokens.save(RefreshToken.builder().userId(owner.getId()).token("b-" + UUID.randomUUID()).expiryDate(later).build());
-        RefreshToken bystander = refreshTokens.save(
-                RefreshToken.builder().userId(other.getId()).token("c-" + UUID.randomUUID()).expiryDate(later).build());
-        flushAndClear();
-
-        refreshTokens.revokeAllForUserId(owner.getId());
-        flushAndClear();
-
-        assertTrue(refreshTokens.findByUserId(owner.getId()).stream().allMatch(RefreshToken::isRevoked));
-        assertFalse(refreshTokens.findByToken(bystander.getToken()).orElseThrow().isRevoked(),
-                "another user's session must be untouched");
-    }
-
-    @Test
-    @DisplayName("refresh tokens: a token is found by its stored hash, and the revoked flag persists")
-    void refreshToken_findByTokenAndRevoke() {
-        User owner = users.save(newUser(uniqueEmail()));
-        String hash = "sha256:" + UUID.randomUUID();
-        RefreshToken token = refreshTokens.save(RefreshToken.builder().userId(owner.getId()).token(hash)
-                .expiryDate(LocalDateTime.now().plusDays(1)).build());
-        flushAndClear();
-
-        RefreshToken read = refreshTokens.findByToken(hash).orElseThrow();
-        read.revoke();
-        refreshTokens.save(read);
-        flushAndClear();
-
-        assertTrue(refreshTokens.findByToken(hash).orElseThrow().isRevoked());
-        assertEquals(token.getUserId(), read.getUserId());
-    }
-
-    @Test
-    @DisplayName("reset tokens: invalidating all for a user spends every outstanding reset link")
-    void resetTokens_invalidateAllForUser() {
-        User owner = users.save(newUser(uniqueEmail()));
-        String hash = "sha256:" + UUID.randomUUID();
-        resetTokens.save(PasswordResetToken.builder().userId(owner.getId()).email(owner.getEmail())
-                .token(hash).expiryDate(LocalDateTime.now().plusMinutes(30)).used(false).build());
-        flushAndClear();
-
-        resetTokens.invalidateAllForUserId(owner.getId());
-        flushAndClear();
-
-        assertFalse(resetTokens.findByToken(hash).orElseThrow().isValid());
     }
 }

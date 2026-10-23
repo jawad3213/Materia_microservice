@@ -6,12 +6,11 @@ import com.materia.backend.contexts.auth.domain.enums.UserStatus;
 import com.materia.backend.contexts.auth.domain.exceptions.EmailAlreadyExistsException;
 import com.materia.backend.contexts.auth.domain.ports.in.AccountProvisioningUseCase;
 import com.materia.backend.contexts.auth.domain.ports.out.EmailSender;
-import com.materia.backend.contexts.auth.domain.ports.out.RefreshTokenRepository;
+import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import com.materia.backend.contexts.auth.domain.valueObjects.Password;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,7 +19,10 @@ import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
-/** Provisions and revokes the user accounts of employees. */
+/**
+ * Provisions and revokes the user accounts of employees. The account itself (its password, its sessions) lives in
+ * the identity provider; identity keeps its directory entry under the same id.
+ */
 @Service
 @Transactional
 public class AccountProvisioningService implements AccountProvisioningUseCase {
@@ -31,17 +33,14 @@ public class AccountProvisioningService implements AccountProvisioningUseCase {
     private static final Role DEFAULT_ROLE = Role.PURCHASER;
 
     private final UserRepository userRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final IdentityProvider identityProvider;
     private final EmailSender emailSender;
 
     public AccountProvisioningService(UserRepository userRepository,
-                                      RefreshTokenRepository refreshTokenRepository,
-                                      PasswordEncoder passwordEncoder,
+                                      IdentityProvider identityProvider,
                                       EmailSender emailSender) {
         this.userRepository = userRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
-        this.passwordEncoder = passwordEncoder;
+        this.identityProvider = identityProvider;
         this.emailSender = emailSender;
     }
 
@@ -54,8 +53,8 @@ public class AccountProvisioningService implements AccountProvisioningUseCase {
 
         Role role = roleCode == null || roleCode.isBlank() ? DEFAULT_ROLE : Role.fromCode(roleCode.trim().toUpperCase());
 
-        // A caller-supplied password must satisfy the same policy as one chosen through
-        // the reset flow, so provisioning cannot become a way around the password rules.
+        // A caller-supplied password must satisfy the same policy as one the user chooses,
+        // so provisioning cannot become a way around the password rules.
         boolean passwordWasGenerated = rawPassword == null || rawPassword.trim().isEmpty();
         String password = passwordWasGenerated ? generateSecureTemporaryPassword() : rawPassword.trim();
         Password.fromRaw(password);
@@ -65,14 +64,21 @@ public class AccountProvisioningService implements AccountProvisioningUseCase {
                 .firstName(firstName)
                 .lastName(lastName)
                 .role(role)
-                .passwordHash(passwordEncoder.encode(password))
                 .status(UserStatus.ACTIVE)
                 .enabled(true)
-                .mustChangePassword(true)
                 .build();
 
-        User savedUser = userRepository.save(user);
-        log.info("[ACCOUNT-PROVISIONING] Provisioned User ID {} with role {} for {} (mustChangePassword=true)",
+        // The identity provider chooses the id; the directory entry takes it, so it is the subject of the user's tokens.
+        UUID id = identityProvider.createAccount(user, password, true);
+        user.setId(id);
+        User savedUser;
+        try {
+            savedUser = userRepository.save(user);
+        } catch (RuntimeException e) {
+            identityProvider.deleteAccount(id);
+            throw e;
+        }
+        log.info("[ACCOUNT-PROVISIONING] Provisioned User ID {} with role {} for {} (new password at first sign-in)",
                 savedUser.getId(), role.getCode(), normalizedEmail);
 
         // Deliver credentials via transactional email
@@ -87,9 +93,9 @@ public class AccountProvisioningService implements AccountProvisioningUseCase {
             user.setStatus(UserStatus.INACTIVE);
             user.setEnabled(false);
             userRepository.save(user);
-            // Invalidate all active refresh tokens immediately to force logout
-            refreshTokenRepository.revokeAllForUserId(userId);
-            log.info("[ACCOUNT-PROVISIONING] Revoked all tokens and disabled user ID: {}", userId);
+            // Disabled where the user signs in, with every session ended: their tokens are not renewed
+            identityProvider.disableAccount(userId);
+            log.info("[ACCOUNT-PROVISIONING] Disabled user ID {} and ended their sessions", userId);
         });
     }
 
