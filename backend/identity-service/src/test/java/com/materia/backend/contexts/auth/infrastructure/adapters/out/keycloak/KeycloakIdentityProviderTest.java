@@ -78,8 +78,10 @@ class KeycloakIdentityProviderTest {
                 .andExpect(jsonPath("$.credentials[0].temporary").value(true))
                 .andExpect(jsonPath("$.requiredActions[0]").value("UPDATE_PASSWORD"))
                 .andRespond(withCreatedEntity(URI.create(ADMIN + "/users/" + id)));
-        admin(HttpMethod.GET, "/roles/RECEIVER")
-                .andRespond(withSuccess("{\"id\":\"r1\",\"name\":\"RECEIVER\"}", MediaType.APPLICATION_JSON));
+        // The roles it may be given: readable with manage-users, unlike the realm's own role list
+        admin(HttpMethod.GET, "/users/" + id + "/role-mappings/realm/available")
+                .andRespond(withSuccess("[{\"id\":\"r0\",\"name\":\"ADMIN\"},{\"id\":\"r1\",\"name\":\"RECEIVER\"}]",
+                        MediaType.APPLICATION_JSON));
         admin(HttpMethod.POST, "/users/" + id + "/role-mappings/realm")
                 .andExpect(jsonPath("$[0].name").value("RECEIVER"))
                 .andRespond(withNoContent());

@@ -143,7 +143,9 @@ record("identity's old sign-in endpoint is gone", oldSignIn.status !== 200 && !o
 
 const wrongPassword = await login(TEST_EMAIL, `${TEST_PASSWORD}-wrong`);
 const unknownAccount = await login(`nobody-${randomBytes(6).toString('hex')}@example.com`, 'Whatever-1!');
-record('a wrong password is refused', wrongPassword.status === 401, `HTTP ${wrongPassword.status}`);
+// Keycloak answers a refused password grant with 400 invalid_grant (OAuth 2.0, RFC 6749 5.2)
+record('a wrong password is refused', wrongPassword.status === 400 && wrongPassword.json?.error === 'invalid_grant',
+  `HTTP ${wrongPassword.status} ${wrongPassword.json?.error ?? ''}`);
 record(
   'a wrong password and an unknown account get the same answer (no account enumeration)',
   wrongPassword.status === unknownAccount.status &&

@@ -403,7 +403,7 @@
     {
       "clientId": "identity",
       "name": "Materia identity service",
-      "description": "Client credentials: identity creates, renames and disables the accounts of employees (realm-management).",
+      "description": "Client credentials: identity creates, renames and disables the accounts of employees (realm-management manage-users), and imports the accounts from before Keycloak (manage-realm: remove it once they are all imported).",
       "enabled": true,
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
@@ -497,7 +497,8 @@
         "realm-management": [
           "manage-users",
           "view-users",
-          "query-users"
+          "query-users",
+          "manage-realm"
         ]
       }
     }

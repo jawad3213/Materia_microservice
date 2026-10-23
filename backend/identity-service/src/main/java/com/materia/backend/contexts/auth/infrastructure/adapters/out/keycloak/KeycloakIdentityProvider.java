@@ -88,13 +88,25 @@ public class KeycloakIdentityProvider implements IdentityProvider {
         return id;
     }
 
-    /** Not part of the creation: Keycloak's create-user ignores roles. */
+    /**
+     * Not part of the creation: Keycloak's create-user ignores roles. The role is found among those the user may be
+     * given, which manage-users can read (the realm's own role list needs view-realm).
+     */
     private void assignRole(UUID id, User user) {
+        String code = user.getRole().getCode();
         try {
-            Map<?, ?> role = http.get().uri(admin("/roles/" + user.getRole().getCode()))
+            List<?> available = http.get().uri(admin("/users/" + id + "/role-mappings/realm/available"))
                     .headers(this::authorize)
                     .retrieve()
-                    .body(Map.class);
+                    .body(List.class);
+            Object role = available == null ? null : available.stream()
+                    .filter(r -> r instanceof Map<?, ?> m && code.equals(m.get("name")))
+                    .findFirst()
+                    .orElse(null);
+            if (role == null) {
+                deleteAccount(id);
+                throw new IllegalStateException("Keycloak has no realm role " + code + " to give " + user.getEmail());
+            }
             http.post().uri(admin("/users/" + id + "/role-mappings/realm"))
                     .headers(this::authorize)
                     .contentType(MediaType.APPLICATION_JSON)

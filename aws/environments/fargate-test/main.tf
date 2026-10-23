@@ -383,7 +383,7 @@ locals {
         KEYCLOAK_TEST_CLIENT_SECRET = "KEYCLOAK_TEST_CLIENT_SECRET"
         },
       { for c in keys(random_password.service_client) : "SERVICE_CLIENT_${upper(c)}_SECRET" => "SERVICE_CLIENT_${upper(c)}_SECRET" })
-      health = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      health = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /auth/realms/materia HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
     }
     procurement = {
       image  = local.image.procurement
