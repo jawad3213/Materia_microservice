@@ -425,6 +425,32 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "materia-test-runner",
+      "name": "Materia CD tests",
+      "description": "Password grant for the CD smoke, load and security tests (tests/): a user's token without a browser. Confidential; grants no role of its own.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEYCLOAK_TEST_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [
@@ -486,5 +512,7 @@
     "user": "${KEYCLOAK_SMTP_USER}",
     "password": "${KEYCLOAK_SMTP_PASSWORD}",
     "starttls": "${KEYCLOAK_SMTP_STARTTLS}"
-  }
+  },
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0
 }

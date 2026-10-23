@@ -197,13 +197,19 @@ public class KeycloakIdentityProvider implements IdentityProvider {
 
     /** A stored BCrypt hash as a Keycloak credential, verified by the realm's bcrypt provider (keycloak/). */
     private Map<String, Object> bcrypt(String hash) {
+        Map<String, Object> secret = new LinkedHashMap<>();
+        secret.put("value", hash);
+        secret.put("salt", "");
+        secret.put("additionalParameters", Map.of());
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("hashIterations", cost(hash));
+        data.put("algorithm", "bcrypt");
+        data.put("additionalParameters", Map.of());
         try {
             return Map.of(
                     "type", "password",
-                    "secretData", json.writeValueAsString(Map.of("value", hash, "salt", "",
-                            "additionalParameters", Map.of())),
-                    "credentialData", json.writeValueAsString(Map.of("hashIterations", cost(hash),
-                            "algorithm", "bcrypt", "additionalParameters", Map.of())));
+                    "secretData", json.writeValueAsString(secret),
+                    "credentialData", json.writeValueAsString(data));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }

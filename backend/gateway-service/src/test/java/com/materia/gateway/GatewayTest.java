@@ -38,17 +38,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The gateway in front of two stand-in services, procurement and Identity (which publishes the JWK set), that record
  * what reaches them: what is routed where, what is refused before a service sees it, and what a service receives. A
- * stand-in Keycloak publishes the realm's keys, whose tokens are accepted beside Identity's.
+ * stand-in Keycloak publishes the realm's keys, the only ones tokens are verified with.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "management.server.port=0",
         "gateway.rate-limit.max-auth-requests-per-minute=3"})
 class GatewayTest {
 
-    private static final KeyPair KEYS = rsa();
-    private static final KeyPair OTHER_KEYS = rsa();
     private static final KeyPair KEYCLOAK_KEYS = rsa();
-    private static final String KEY_ID = "test-key";
+    private static final KeyPair OTHER_KEYS = rsa();
     private static final String KEYCLOAK_KEY_ID = "keycloak-key";
 
     /** Requests the stand-in services received, with which one and the headers that matter. */
@@ -101,11 +99,6 @@ class GatewayTest {
     private static HttpServer service(String name) {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
-            if (name.equals("identity")) {
-                String jwks = new JWKSet(new RSAKey.Builder((RSAPublicKey) KEYS.getPublic()).keyID(KEY_ID).build())
-                        .toString();
-                server.createContext("/.well-known/jwks.json", exchange -> reply(exchange, 200, jwks));
-            }
             server.createContext("/api/", exchange -> {
                 RECEIVED.add(Map.of(
                         "service", name,
@@ -144,15 +137,20 @@ class GatewayTest {
         }
     }
 
-    private static String token(KeyPair keys, Date expiry, Map<String, Object> claims) {
+    /** A user's token for the API, as the realm issues it, signed with the given key and with these realm roles. */
+    private static String token(KeyPair keys, Date expiry, List<String> realmRoles) {
         try {
-            JWTClaimsSet.Builder set = new JWTClaimsSet.Builder()
+            JWTClaimsSet set = new JWTClaimsSet.Builder()
+                    .issuer(KEYCLOAK_ISSUER)
                     .subject(UUID.randomUUID().toString())
-                    .issueTime(new Date())
-                    .expirationTime(expiry);
-            claims.forEach(set::claim);
-            SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEY_ID)
-                    .type(JOSEObjectType.JWT).build(), set.build());
+                    .audience(List.of("materia-api", "account"))
+                    .issueTime(new Date(expiry.getTime() - 120_000))
+                    .expirationTime(expiry)
+                    .claim("azp", "materia-frontend")
+                    .claim("realm_access", Map.of("roles", realmRoles))
+                    .build();
+            SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEYCLOAK_KEY_ID)
+                    .type(JOSEObjectType.JWT).build(), set);
             jwt.sign(new RSASSASigner((RSAPrivateKey) keys.getPrivate()));
             return jwt.serialize();
         } catch (Exception e) {
@@ -182,7 +180,7 @@ class GatewayTest {
     }
 
     private static String validToken() {
-        return token(KEYS, new Date(System.currentTimeMillis() + 60_000), Map.of("roles", "ROLE_ADMIN"));
+        return token(KEYCLOAK_KEYS, new Date(System.currentTimeMillis() + 60_000), List.of("ADMIN"));
     }
 
     @Test
@@ -290,7 +288,7 @@ class GatewayTest {
     void forgedToken_isRefused() {
         client.get().uri("/api/v1/invoices")
                 .header("Authorization", "Bearer " + token(OTHER_KEYS, new Date(System.currentTimeMillis() + 60_000),
-                        Map.of("roles", "ROLE_ADMIN")))
+                        List.of("ADMIN")))
                 .exchange()
                 .expectStatus().isUnauthorized()
                 .expectBody().jsonPath("$.status").isEqualTo(401);
@@ -302,7 +300,7 @@ class GatewayTest {
     @DisplayName("gateway: an expired token is refused (401) and never reaches a service")
     void expiredToken_isRefused() {
         client.get().uri("/api/v1/invoices")
-                .header("Authorization", "Bearer " + token(KEYS, new Date(System.currentTimeMillis() - 600_000), Map.of()))
+                .header("Authorization", "Bearer " + token(KEYCLOAK_KEYS, new Date(System.currentTimeMillis() - 600_000), List.of("ADMIN")))
                 .exchange()
                 .expectStatus().isUnauthorized();
 
@@ -313,8 +311,8 @@ class GatewayTest {
     @DisplayName("gateway: a service token, valid between services only, is refused from outside")
     void serviceToken_isRefused() {
         client.get().uri("/api/v1/invoices")
-                .header("Authorization", "Bearer " + token(KEYS, new Date(System.currentTimeMillis() + 60_000),
-                        Map.of("svc", true, "roles", "ROLE_SERVICE")))
+                .header("Authorization", "Bearer " + token(KEYCLOAK_KEYS, new Date(System.currentTimeMillis() + 60_000),
+                        List.of("SERVICE")))
                 .exchange()
                 .expectStatus().isUnauthorized();
 
@@ -334,13 +332,12 @@ class GatewayTest {
     }
 
     @Test
-    @DisplayName("gateway: a Keycloak token for another audience, of a service account, or not signed by Keycloak is 401")
+    @DisplayName("gateway: a token for another audience, of a service account, or not signed by the realm is 401")
     void keycloakTokens_refused() {
         for (String token : List.of(
                 keycloakToken(KEYCLOAK_KEYS, List.of("account"), List.of("ADMIN")),
                 keycloakToken(KEYCLOAK_KEYS, List.of("materia-api"), List.of("SERVICE")),
-                // Naming the realm as issuer: verified with the realm's keys, never Identity's
-                keycloakToken(KEYS, List.of("materia-api"), List.of("ADMIN")))) {
+                keycloakToken(OTHER_KEYS, List.of("materia-api"), List.of("ADMIN")))) {
             client.get().uri("/api/v1/invoices").header("Authorization", "Bearer " + token)
                     .exchange()
                     .expectStatus().isUnauthorized();
@@ -385,7 +382,7 @@ class GatewayTest {
     }
 
     @Test
-    @DisplayName("gateway: only the API, its docs and the public key are routed; anything else is 404")
+    @DisplayName("gateway: only the API and its docs are routed; anything else is 404")
     void unroutedPaths_are404() {
         client.get().uri("/actuator/env").exchange().expectStatus().isNotFound();
         client.get().uri("/internal/anything").exchange().expectStatus().isNotFound();

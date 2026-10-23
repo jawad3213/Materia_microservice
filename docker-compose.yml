@@ -124,8 +124,7 @@ services:
       # publishes the committed events of the shared outbox to materia.<context>.events.
       APP_MESSAGING_TYPE: kafka
       APP_OUTBOX_RELAY_ENABLED: "true"
-      # Verifies tokens only: identity signs users' (until Keycloak is the only issuer), Keycloak this service's own.
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      # Keycloak signs every token: this service verifies them, and gets its own there (client credentials).
       KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
       KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       SERVICE_CLIENT_ID: procurement
@@ -193,6 +192,7 @@ services:
       SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
       SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
       SERVICE_CLIENT_IDENTITY_SECRET: ${SERVICE_CLIENT_IDENTITY_SECRET}
+      KEYCLOAK_TEST_CLIENT_SECRET: ${KEYCLOAK_TEST_CLIENT_SECRET:-materia-test-runner-local}
     healthcheck:
       # No curl in the image: bash's /dev/tcp asks the management port whether Keycloak is ready
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
@@ -222,8 +222,6 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: materia_identity
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_IDENTITY:-materia_identity_local}
-      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
       KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       # Its own Keycloak client: it creates, renames and disables the accounts there
@@ -259,7 +257,6 @@ services:
       SPRING_DATASOURCE_USERNAME: materia_masterdata
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_MASTERDATA:-materia_masterdata_local}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
       KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
@@ -292,7 +289,6 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: materia_finance
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_FINANCE:-materia_finance_local}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
       KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
@@ -325,7 +321,6 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: materia_analytics
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_ANALYTICS:-materia_analytics_local}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
       KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}

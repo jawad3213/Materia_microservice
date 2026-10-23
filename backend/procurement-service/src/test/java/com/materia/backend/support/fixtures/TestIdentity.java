@@ -1,6 +1,6 @@
 package com.materia.backend.support.fixtures;
 
-import com.materia.backend.gateway.security.JwtTokenProvider;
+import com.materia.backend.gateway.security.AccessTokens;
 import com.materia.backend.infrastructure.grpc.JwtTokenVerifier;
 import com.materia.backend.infrastructure.grpc.ServiceTokenSource;
 import com.materia.grpc.auth.AuthenticationServerInterceptor;
@@ -22,7 +22,7 @@ import java.util.UUID;
  * Identity's stand-in for this application's tests: identity.v1 (UserDirectory) on the in-process server {@value #SERVER_NAME},
  * which {@code app.grpc.identity.target} points at, and Keycloak's for this service's own tokens (the primary
  * {@link ServiceTokenSource}). The directory answers from the accounts tests register ({@link #save}); service
- * tokens are signed with the test key pair. Every call needs a valid token.
+ * tokens are signed with the suite's realm key ({@link TestKeycloak}). Every call needs a valid token.
  *
  * <p>One server for the JVM, shared by every test context (they all use the same keys and client credentials), so
  * accounts outlive a test's rollback: give each test its own ({@link UserFixtures} makes unique ones). A component
@@ -35,11 +35,11 @@ public class TestIdentity implements ServiceTokenSource {
     public static final String SERVER_NAME = "test-identity";
 
     private static final TestUserDirectory DIRECTORY = new TestUserDirectory();
-    private static volatile JwtTokenProvider jwt;
+    private static volatile AccessTokens tokens;
 
     static {
         AuthenticationServerInterceptor authentication = new AuthenticationServerInterceptor(
-                token -> jwt == null ? Optional.empty() : new JwtTokenVerifier(jwt).verify(token), Set.of());
+                token -> tokens == null ? Optional.empty() : new JwtTokenVerifier(tokens).verify(token), Set.of());
         try {
             InProcessServerBuilder.forName(SERVER_NAME).directExecutor()
                     .addService(ServerInterceptors.intercept(DIRECTORY, new ExceptionTranslatingServerInterceptor(),
@@ -50,10 +50,14 @@ public class TestIdentity implements ServiceTokenSource {
         }
     }
 
+    private final TestKeycloak keycloak;
     private final String clientId;
 
-    public TestIdentity(JwtTokenProvider jwt, @Value("${app.service-client.id}") String clientId) {
-        TestIdentity.jwt = jwt;
+    public TestIdentity(AccessTokens tokens,
+                        @Value("${test.keycloak.private-key}") String keycloakKey,
+                        @Value("${app.service-client.id}") String clientId) {
+        TestIdentity.tokens = tokens;
+        this.keycloak = new TestKeycloak(keycloakKey);
         this.clientId = clientId;
     }
 
@@ -70,6 +74,6 @@ public class TestIdentity implements ServiceTokenSource {
     /** This service's own token, as Keycloak issues it for its client credentials. */
     @Override
     public IssuedServiceToken issue() {
-        return new IssuedServiceToken(jwt.generateServiceToken(clientId), jwt.accessExpirationMs() / 1000);
+        return new IssuedServiceToken(keycloak.serviceToken(clientId), keycloak.lifetimeSeconds());
     }
 }

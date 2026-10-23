@@ -13,7 +13,8 @@ name: CD Production
 # Run it by hand to redeploy an earlier release (a rollback): give its commit SHA; that run needs its own approval.
 #
 # GitHub environment "production": variables AWS_DEPLOY_ROLE_ARN, APP_URL (AWS_REGION optional); secrets
-# SMOKE_EMAIL / SMOKE_PASSWORD optional (an account the smoke test signs in with).
+# SMOKE_EMAIL / SMOKE_PASSWORD / KEYCLOAK_TEST_CLIENT_SECRET optional (an account the smoke test signs in with, and the
+# realm's materia-test-runner client secret: terraform output keycloak_test_client_secret).
 on:
   workflow_call:
     inputs:
@@ -90,7 +91,7 @@ jobs:
           digest() { aws ecr describe-images --repository-name "$1" --image-ids imageTag="$IMAGE_TAG" \
                        --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true; }
           echo "### Promoted \`${IMAGE_TAG:0:12}\` from staging" >> "$GITHUB_STEP_SUMMARY"
-          for SERVICE in backend identity masterdata finance analytics gateway frontend; do
+          for SERVICE in backend identity masterdata finance analytics gateway frontend keycloak; do
             SOURCE="$PROJECT-staging-$SERVICE"
             TARGET="$PROJECT-prod-$SERVICE"
             SOURCE_DIGEST=$(digest "$SOURCE")
@@ -175,6 +176,7 @@ jobs:
           BASE_URL: ${{ vars.APP_URL }}
           SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          KEYCLOAK_TEST_CLIENT_SECRET: ${{ secrets.KEYCLOAK_TEST_CLIENT_SECRET }}
         run: |
           [ -n "$BASE_URL" ] || { echo "::error::Set the APP_URL variable of the production environment"; exit 1; }
           node tests/smoke/smoke-test.mjs

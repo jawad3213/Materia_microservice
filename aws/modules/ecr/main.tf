@@ -1,7 +1,7 @@
 # ===================================================================
 # Module: ecr
 # One private repository per image (backend, identity, masterdata, finance,
-# analytics, gateway, frontend). Images are
+# analytics, gateway, frontend, keycloak). Images are
 # tagged with the git commit SHA, so tags are immutable.
 # ===================================================================
 

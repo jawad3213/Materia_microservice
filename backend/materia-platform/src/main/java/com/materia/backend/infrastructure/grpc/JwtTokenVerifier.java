@@ -1,10 +1,8 @@
 package com.materia.backend.infrastructure.grpc;
 
 import com.materia.backend.gateway.security.AccessTokens;
-import com.materia.backend.gateway.security.JwtTokenProvider;
 import com.materia.grpc.auth.Caller;
 import com.materia.grpc.auth.TokenVerifier;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
@@ -16,14 +14,8 @@ public class JwtTokenVerifier implements TokenVerifier {
 
     private final AccessTokens tokens;
 
-    @Autowired
     public JwtTokenVerifier(AccessTokens tokens) {
         this.tokens = tokens;
-    }
-
-    /** Identity's tokens only. */
-    public JwtTokenVerifier(JwtTokenProvider jwt) {
-        this(new AccessTokens(jwt, null));
     }
 
     @Override

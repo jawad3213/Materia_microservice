@@ -31,8 +31,7 @@ promote_from_environment = "staging"
 
 # Application
 spring_profile        = "prod"
-app_url               = "" # e.g. "https://app.example.com" once DNS and TLS are in place
-refresh_cookie_secure = false # set to true together with HTTPS
+app_url               = "" # e.g. "https://app.example.com": Keycloak's sign-in needs HTTPS (see aws/README.md)
 contact_email         = "support@example.com"
 bootstrap_admin_email = "admin@example.com" # first administrator; read its password with the bootstrap_admin_password_command output
 

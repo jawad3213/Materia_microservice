@@ -17,8 +17,8 @@ import java.util.Map;
 
 /**
  * Refuses a request whose bearer token is forged, expired or a service token (401) before it reaches any service.
- * A request without a token goes on: whether its path needs one is the service's decision (sign-in, password
- * reset and the public key do not). The token itself is forwarded untouched, and each service verifies it again.
+ * A request without a token goes on: whether its path needs one is the service's decision (the API docs do not).
+ * The token itself is forwarded untouched, and each service verifies it again.
  */
 @Component
 public class BearerTokenFilter implements GlobalFilter, Ordered {
@@ -46,12 +46,8 @@ public class BearerTokenFilter implements GlobalFilter, Ordered {
                         e -> ErrorResponses.write(exchange, HttpStatus.UNAUTHORIZED, "Invalid or expired token"));
     }
 
-    /**
-     * Service tokens travel between services only: Identity's (JwtTokenProvider.generateServiceToken), and a Keycloak
-     * service account's (realm role SERVICE, KeycloakTokens).
-     */
+    /** Service tokens (a Keycloak service account's: realm role SERVICE) travel between services only. */
     static boolean isServiceToken(Jwt jwt) {
-        if (Boolean.TRUE.equals(jwt.getClaim("svc"))) return true;
         Map<String, Object> realmAccess = jwt.getClaimAsMap("realm_access");
         return realmAccess != null && realmAccess.get("roles") instanceof Collection<?> roles
                 && roles.contains("SERVICE");

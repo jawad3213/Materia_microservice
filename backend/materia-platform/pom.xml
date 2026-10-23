@@ -84,23 +84,9 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-impl</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
-            <scope>runtime</scope>
-        </dependency>
         <!--
-          Verification of Keycloak's tokens against its JWK set (NimbusJwtDecoder), while services move from Identity's
-          tokens to Keycloak's. Only the JOSE library: the resource server starter would bring its own security chain.
+          Verification of Keycloak's tokens against its JWK set (NimbusJwtDecoder). Only the JOSE library: the resource
+          server starter would bring its own security chain.
         -->
         <dependency>
             <groupId>org.springframework.security</groupId>

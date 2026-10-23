@@ -68,6 +68,7 @@ if $BUILD; then
     push "$service" "$ROOT/backend/$service-service"
   done
   push frontend --build-arg VITE_API_BASE_URL=/api/v1 "$ROOT/frontend"
+  push keycloak "$ROOT/keycloak"
 fi
 
 # ---- Infrastructure -------------------------------------------------------------------------------------------
@@ -143,14 +144,18 @@ wait_ready kafka 5
 log "2. The services' database users"
 db_roles
 
-log "3. Procurement (its migrations create the services' schemas)"
+log "3. Keycloak (every service's tokens; identity imports its accounts there)"
+start keycloak
+wait_ready keycloak 10
+
+log "4. Procurement (its migrations create the services' schemas)"
 start procurement
 wait_ready procurement 15
 
-log "4. The database users again"
+log "5. The database users again"
 db_roles
 
-log "5. The other services"
+log "6. The other services"
 start identity masterdata finance analytics
 for s in identity masterdata finance analytics; do wait_ready "$s" 15; done
 start gateway frontend

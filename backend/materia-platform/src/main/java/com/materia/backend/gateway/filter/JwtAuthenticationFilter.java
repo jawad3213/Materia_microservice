@@ -1,7 +1,6 @@
 package com.materia.backend.gateway.filter;
 
 import com.materia.backend.gateway.security.AccessTokens;
-import com.materia.backend.gateway.security.JwtTokenProvider;
 import com.materia.backend.gateway.security.VerifiedToken;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -10,7 +9,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.materia.backend.gateway.security.BearerTokenAuthentication;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
@@ -26,17 +24,17 @@ import java.util.UUID;
  *
  * Intercepts every incoming request at the API Gateway level to:
  * 1. Extract the Bearer token from the Authorization header.
- * 2. Validate token integrity and expiration via AccessTokens (Identity's tokens, or Keycloak's once enabled).
+ * 2. Validate token integrity and expiration via AccessTokens (Keycloak's realm keys).
  * 3. Extract User ID (UUID) and Roles directly from the JWT claims.
  * 4. Populate the SecurityContext — ZERO database call.
  *
  * In a microservice architecture, the Gateway never queries the auth database.
  * All user identity information needed for authorization is embedded in the
- * self-contained JWT token and verified with the public key (RS256).
+ * self-contained JWT token Keycloak signed, verified with its public key (RS256).
  *
  * ┌────────────────────────────────────────────────────────────┐
  * │  JWT Payload (claims)                                       │
- * │  { sub: "uuid", roles: "ROLE_ADMIN,ROLE_PURCHASER", exp }  │
+ * │  { sub: "uuid", realm_access.roles, resource_access, exp }  │
  * └────────────────────────────────────────────────────────────┘
  */
 @Component
@@ -46,14 +44,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final AccessTokens accessTokens;
 
-    @Autowired
     public JwtAuthenticationFilter(AccessTokens accessTokens) {
         this.accessTokens = accessTokens;
-    }
-
-    /** Identity's tokens only. */
-    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {
-        this(new AccessTokens(jwtTokenProvider, null));
     }
 
     @Override

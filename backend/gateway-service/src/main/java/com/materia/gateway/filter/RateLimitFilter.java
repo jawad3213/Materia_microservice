@@ -56,10 +56,9 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         return chain.filter(exchange);
     }
 
-    /** The other sign-in routes, the API docs and the public key: not counted, like in procurement. */
+    /** The other sign-in routes and the API docs: not counted, like in procurement. */
     private static boolean isPublic(String path) {
-        return path.startsWith("/api/v1/auth/") || path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")
-                || path.equals("/.well-known/jwks.json");
+        return path.startsWith("/api/v1/auth/") || path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs");
     }
 
     static String clientOf(ServerHttpRequest request) {
