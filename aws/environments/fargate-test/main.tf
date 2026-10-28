@@ -369,6 +369,7 @@ locals {
         MATERIA_DEV_APP_URL             = local.app_url
         KEYCLOAK_SSL_REQUIRED           = "none"
         KEYCLOAK_PKCE_METHOD            = "S256"
+        KEYCLOAK_TEST_CLIENT_ENABLED    = "true"
         KEYCLOAK_SMTP_HOST              = ""
         KEYCLOAK_SMTP_PORT              = "587"
         KEYCLOAK_SMTP_FROM              = "no-reply@materia.local"

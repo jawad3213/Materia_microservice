@@ -1,5 +1,7 @@
 package com.materia.backend.gateway.security;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -35,6 +37,7 @@ import java.util.Optional;
  */
 public class KeycloakTokens {
 
+    private static final Logger log = LoggerFactory.getLogger(KeycloakTokens.class);
     static final String SERVICE_REALM_ROLE = "SERVICE";
     private static final String SERVICE_SUBJECT_PREFIX = "service:";
 
@@ -84,6 +87,9 @@ public class KeycloakTokens {
         try {
             jwt = decoder.decode(token);
         } catch (JwtException e) {
+            // Why a request gets 401 (expired, another issuer or audience, an unknown key): debug level, since a
+            // client can send any number of bad tokens
+            log.debug("Refused a token: {}", e.getMessage());
             return Optional.empty();
         }
         List<String> realmRoles = roles(jwt.getClaimAsMap("realm_access"));

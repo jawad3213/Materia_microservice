@@ -193,6 +193,8 @@ services:
       SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
       SERVICE_CLIENT_IDENTITY_SECRET: ${SERVICE_CLIENT_IDENTITY_SECRET}
       KEYCLOAK_TEST_CLIENT_SECRET: ${KEYCLOAK_TEST_CLIENT_SECRET:-materia-test-runner-local}
+      # The password-grant client of the tests in tests/: on locally, off in production
+      KEYCLOAK_TEST_CLIENT_ENABLED: ${KEYCLOAK_TEST_CLIENT_ENABLED:-true}
     healthcheck:
       # No curl in the image: bash's /dev/tcp asks for the realm, which answers once imported (the readiness probe is UP
       # earlier, while Keycloak still answers 503 during its first start)

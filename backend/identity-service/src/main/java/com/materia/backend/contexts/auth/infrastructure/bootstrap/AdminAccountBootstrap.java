@@ -75,7 +75,12 @@ public class AdminAccountBootstrap implements ApplicationRunner {
                 .createdBy("bootstrap")
                 .build();
         admin.setId(identityProvider.createAccount(admin, password, true));
-        userRepository.save(admin);
+        try {
+            userRepository.saveNow(admin);
+        } catch (RuntimeException e) {
+            identityProvider.deleteAccount(admin.getId());
+            throw e;
+        }
         log.info("[BOOTSTRAP] Created the first administrator {}; a new password is required at first sign-in.", admin.getEmail());
         return true;
     }

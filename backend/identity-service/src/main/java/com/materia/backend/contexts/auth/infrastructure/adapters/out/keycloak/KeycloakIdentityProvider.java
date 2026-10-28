@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.exceptions.EmailAlreadyExistsException;
 import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
+import com.materia.backend.infrastructure.grpc.CachedServiceTokens;
 import com.materia.backend.infrastructure.grpc.KeycloakServiceTokens;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +40,7 @@ public class KeycloakIdentityProvider implements IdentityProvider {
     private static final String UPDATE_PASSWORD = "UPDATE_PASSWORD";
 
     private final RestClient http;
-    private final KeycloakServiceTokens tokens;
+    private final CachedServiceTokens tokens;
     private final String adminUri;
     private final ObjectMapper json;
 
@@ -49,7 +50,8 @@ public class KeycloakIdentityProvider implements IdentityProvider {
                                     @Value("${app.service-client.secret}") String clientSecret) {
         this.http = http.build();
         this.json = json;
-        this.tokens = new KeycloakServiceTokens(http, realmUri, clientId, clientSecret);
+        // Identity's own token for the admin API, reused until half way through its life
+        this.tokens = new CachedServiceTokens(new KeycloakServiceTokens(http, realmUri, clientId, clientSecret));
         this.adminUri = adminUri(realmUri);
     }
 
@@ -242,7 +244,7 @@ public class KeycloakIdentityProvider implements IdentityProvider {
     }
 
     private void authorize(HttpHeaders headers) {
-        headers.setBearerAuth(tokens.issue().token());
+        headers.setBearerAuth(tokens.token());
     }
 
     private static IllegalStateException failure(String what, RestClientResponseException e) {

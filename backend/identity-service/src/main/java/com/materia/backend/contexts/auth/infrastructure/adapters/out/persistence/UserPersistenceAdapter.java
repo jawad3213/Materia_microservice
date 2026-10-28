@@ -88,6 +88,11 @@ public class UserPersistenceAdapter implements UserRepository {
     }
 
     @Override
+    public User saveNow(User entity) {
+        return mapper.toDomainEntity(jpaRepository.saveAndFlush(mapper.toJpaEntity(entity)));
+    }
+
+    @Override
     public Optional<User> findByEmail(Email email) {
         if (email == null) return Optional.empty();
         return findByEmail(email.getValue());

@@ -4,6 +4,7 @@ import com.materia.backend.common.infrastructure.seed.DevSeed;
 import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.auth.domain.enums.UserStatus;
+import com.materia.backend.contexts.auth.domain.exceptions.EmailAlreadyExistsException;
 import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import com.materia.backend.contexts.auth.domain.valueObjects.Password;
@@ -63,8 +64,21 @@ public class DevAccountsSeeder implements ApplicationRunner {
                 .createdBy(DevSeed.SEEDER)
                 .build();
         // Created in Keycloak first, which chooses the id the directory entry takes
-        user.setId(identityProvider.createAccount(user, password, false));
-        userRepository.save(user);
+        try {
+            user.setId(identityProvider.createAccount(user, password, false));
+        } catch (EmailAlreadyExistsException e) {
+            // Keycloak kept its data while identity's database was reset: the directory entry cannot take that
+            // account's id without its import, so the account is left alone rather than failing every start
+            log.warn("[DEV-SEED] {} exists in Keycloak but not in the directory: not seeded. Remove it from Keycloak "
+                    + "(admin console) or reset Keycloak's data to seed it again.", email);
+            return;
+        }
+        try {
+            userRepository.saveNow(user);
+        } catch (RuntimeException e) {
+            identityProvider.deleteAccount(user.getId());
+            throw e;
+        }
         log.info("[DEV-SEED] Created the {} account {}", role.getCode(), email);
     }
 }

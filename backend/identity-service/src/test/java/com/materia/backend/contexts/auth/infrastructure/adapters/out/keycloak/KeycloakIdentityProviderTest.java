@@ -21,7 +21,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.test.web.client.ExpectedCount.manyTimes;
+import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
@@ -43,9 +43,10 @@ class KeycloakIdentityProviderTest {
     private final KeycloakIdentityProvider provider =
             new KeycloakIdentityProvider(http, new ObjectMapper(), REALM, "identity", "s3cret");
 
+    /** Asked once per test: the admin token is reused for every call of the test (verified where a test verifies). */
     @BeforeEach
     void identitysOwnToken() {
-        keycloak.expect(manyTimes(), requestTo(REALM + "/protocol/openid-connect/token"))
+        keycloak.expect(once(), requestTo(REALM + "/protocol/openid-connect/token"))
                 .andRespond(withSuccess("{\"access_token\":\"admin-token\",\"expires_in\":60}",
                         MediaType.APPLICATION_JSON));
     }

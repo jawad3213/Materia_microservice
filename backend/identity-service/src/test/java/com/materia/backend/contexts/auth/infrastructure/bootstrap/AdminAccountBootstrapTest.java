@@ -38,7 +38,7 @@ class AdminAccountBootstrapTest {
         assertThat(bootstrap(" Admin@Materia.ma ", "Start1!pass").createIfNoAccount()).isTrue();
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
-        verify(users).save(saved.capture());
+        verify(users).saveNow(saved.capture());
         assertThat(saved.getValue().getEmail()).isEqualTo("admin@materia.ma");
         assertThat(saved.getValue().getRole()).isEqualTo(Role.ADMIN);
         // The password lives in Keycloak only, temporary; the directory entry takes the account's id
@@ -53,7 +53,7 @@ class AdminAccountBootstrapTest {
 
         assertThat(bootstrap("admin@materia.ma", "Start1!pass").createIfNoAccount()).isFalse();
 
-        verify(users, never()).save(any());
+        verify(users, never()).saveNow(any());
     }
 
     @Test
@@ -65,7 +65,7 @@ class AdminAccountBootstrapTest {
         assertThat(bootstrap("admin@materia.ma", "").createIfNoAccount()).isFalse();
         assertThat(bootstrap("admin@materia.ma", "password").createIfNoAccount()).isFalse();
 
-        verify(users, never()).save(any());
+        verify(users, never()).saveNow(any());
         verifyNoInteractions(identityProvider);
     }
 }

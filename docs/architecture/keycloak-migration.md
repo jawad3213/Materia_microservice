@@ -37,11 +37,16 @@ The roles and their permissions are in [`keycloak/materia-realm.json`](../../key
   PostgreSQL (schema `keycloak`, user `materia_keycloak` from `service-roles.sql`) and served under `/auth`.
 - The realm is imported at Keycloak's **first** start, with placeholders filled from its environment: the app's
   address (`MATERIA_APP_URL`), `KEYCLOAK_SSL_REQUIRED`, `KEYCLOAK_PKCE_METHOD`, `KEYCLOAK_SMTP_*` and the clients'
-  secrets (`SERVICE_CLIENT_<SERVICE>_SECRET`, `KEYCLOAK_TEST_CLIENT_SECRET`). Later changes to the file reach an
-  existing realm only through the admin console (or a re-import).
+  secrets (`SERVICE_CLIENT_<SERVICE>_SECRET`, `KEYCLOAK_TEST_CLIENT_SECRET`), `KEYCLOAK_TEST_CLIENT_ENABLED`. Later
+  changes to the file reach an existing realm only through the admin console (or a re-import).
+- Keycloak does not start while one of those is missing, a secret is under 16 characters or still a `${...}`
+  placeholder (`keycloak/materia-entrypoint.sh`): Keycloak would otherwise keep the placeholder text, which the
+  repository shows, as the client's secret.
 - Clients: `materia-frontend` (the web app: authorization code with PKCE), `materia-api` (holds the permissions),
   `procurement`, `masterdata`, `finance`, `analytics` (client credentials), `identity` (realm-management manage-users;
-  manage-realm for the account import), `materia-test-runner` (password grant for the tests in `tests/`).
+  manage-realm for the account import), `materia-test-runner` (password grant for the tests in `tests/`; enabled
+  where `KEYCLOAK_TEST_CLIENT_ENABLED` is true: locally, in staging and the Fargate test environment, not in
+  production unless `keycloak_test_client_enabled` says so).
 - The web app uses keycloak-js (`authService`): `/login` and `/forgot-password` send the browser to Keycloak's pages,
   the profile page's "Change password" to its update-password page. nginx proxies `/auth` to Keycloak and limits
   password checks and token requests per address.
@@ -80,7 +85,8 @@ Everyone signs in again once: identity's tokens are no longer accepted.
    then the services. At its start identity imports its accounts into Keycloak with their passwords:
    `docker compose logs identity | grep KEYCLOAK-IMPORT`. It retries at every start until all are there.
 4. Set the GitHub secret `KEYCLOAK_TEST_CLIENT_SECRET` of the environment (`terraform output -raw
-   keycloak_test_client_secret`): the CD's smoke, load and security tests sign in with it.
+   keycloak_test_client_secret`): the CD's smoke, load and security tests sign in with it. Production keeps the
+   client off (`keycloak_test_client_enabled = false`): its smoke test then skips the signed-in checks.
 5. Once every account is imported, remove `manage-realm` from identity's service account (admin console: Clients,
    `identity`, Service account roles): it only needs `manage-users` from then on.
 
@@ -93,3 +99,11 @@ password hashes once Keycloak has them, so an older identity could no longer sig
   environment has imported its accounts.
 - Procurement still carries settings of the old sign-in (`app.auth.refresh-cookie.*`, `app.mail.reset-password-*`,
   the sign-in paths in `app.security.public-endpoints`); they are unused.
+- Roles have two copies: Keycloak's (what tokens carry) and `identity.users.role` (the directory). A role changed in
+  Keycloak's admin console is not reflected in identity; change roles through identity only, until they are synced.
+- A new account's temporary password is e-mailed by identity. Keycloak can send a link to choose one instead
+  (`execute-actions-email`), once every environment has Keycloak's SMTP settings.
+- The realm is configured once, at Keycloak's first start: applying later changes on every deploy needs a
+  configuration tool (keycloak-config-cli).
+- Keycloak's first administrator (`admin`, `KEYCLOAK_ADMIN_PASSWORD`) is temporary: create a permanent one in the
+  master realm and remove it.
