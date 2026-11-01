@@ -7,6 +7,7 @@ import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.kafka.KafkaException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +45,7 @@ class OutboxRelayTest {
     @Mock private SpringDataOutboxRepository outbox;
     @Mock private KafkaTemplate<String, Object> kafka;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private JdbcTemplate jdbc;
 
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private OutboxRelay relay;
@@ -51,9 +53,11 @@ class OutboxRelayTest {
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        // This copy of the service gets the relay lock, unless a test says otherwise
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), anyString())).thenReturn(true);
         relay = new OutboxRelay(outbox, kafka, new TransactionTemplate(transactionManager), new ObjectMapper(),
                 new StaticListableBeanFactory(Map.of("meters", meters)).getBeanProvider(MeterRegistry.class),
-                1000, 10, 1000);
+                jdbc, "procurement-service", 1000, 10, 1000);
     }
 
     private static OutboxMessageJpaEntity message(String context, String aggregateId) {
@@ -137,5 +141,18 @@ class OutboxRelayTest {
 
         assertEquals(42.0, meters.get("materia.outbox.pending").gauge().value());
         assertEquals(1.0, meters.get("materia.outbox.parked").gauge().value());
+    }
+
+    @Test
+    @DisplayName("relay: while another copy of the service holds the relay lock, this one publishes nothing")
+    void anotherCopyRelays_thisOneWaits() {
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq("outbox-relay:procurement-service")))
+                .thenReturn(false);
+        when(outbox.findPending(any())).thenReturn(List.of(message("purchaseOrder", "po-1")));
+
+        assertEquals(0, relay.relayBatch());
+
+        verify(kafka, never()).send(anyString(), anyString(), any());
+        verify(outbox, never()).findPending(any());
     }
 }
