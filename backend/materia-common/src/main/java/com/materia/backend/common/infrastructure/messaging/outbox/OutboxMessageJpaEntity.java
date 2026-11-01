@@ -47,6 +47,10 @@ public class OutboxMessageJpaEntity {
     @Column(name = "last_error", length = 1000)
     private String lastError;
 
+    /** Set when the message can never be published: the relay goes on without it (see OutboxRelay). */
+    @Column(name = "parked_at")
+    private LocalDateTime parkedAt;
+
     protected OutboxMessageJpaEntity() {
     }
 
@@ -72,6 +76,12 @@ public class OutboxMessageJpaEntity {
         this.lastError = error != null && error.length() > 1000 ? error.substring(0, 1000) : error;
     }
 
+    /** It can never be published as it is: kept, with why, for someone to fix and release (parked_at = null). */
+    public void markParked(String error) {
+        markFailed(error);
+        this.parkedAt = LocalDateTime.now();
+    }
+
     public UUID getId() { return id; }
     public UUID getEventId() { return eventId; }
     public String getEventType() { return eventType; }
@@ -83,4 +93,5 @@ public class OutboxMessageJpaEntity {
     public LocalDateTime getPublishedAt() { return publishedAt; }
     public int getAttempts() { return attempts; }
     public String getLastError() { return lastError; }
+    public LocalDateTime getParkedAt() { return parkedAt; }
 }

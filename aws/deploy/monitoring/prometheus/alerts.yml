@@ -97,3 +97,38 @@ groups:
           severity: warning
         annotations:
           summary: "CPU above 90% for 15 minutes"
+
+  # Events between services (outbox -> Kafka -> consumers). Warnings, not critical: none is a reason to roll a
+  # release back, but each means an event is late or waiting for someone.
+  - name: messaging
+    rules:
+      - alert: OutboxBacklog
+        expr: materia_outbox_pending > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} has {{ $value }} events waiting to be published: is Kafka reachable?"
+
+      - alert: OutboxParkedEvents
+        expr: materia_outbox_parked > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} parked {{ $value }} events it can never publish: see outbox_messages.last_error"
+
+      - alert: EventsDeadLettered
+        expr: increase(materia_events_dead_lettered_total[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} could not apply an event after its retries: it is in the dead-letter topic of group {{ $labels.group }}"
+
+      - alert: ConsumerLagHigh
+        expr: max by (job) (kafka_consumer_fetch_manager_records_lag_max) > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} is {{ $value }} events behind on Kafka"

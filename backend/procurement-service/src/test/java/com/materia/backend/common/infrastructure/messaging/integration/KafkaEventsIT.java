@@ -1,5 +1,8 @@
 package com.materia.backend.common.infrastructure.messaging.integration;
 
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import com.materia.backend.common.domain.DomainEvent;
 import com.materia.backend.common.infrastructure.messaging.outbox.SpringDataOutboxRepository;
 import com.materia.backend.support.AbstractIntegrationTest;
@@ -22,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.kafka.KafkaContainer;
 
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +50,9 @@ class KafkaEventsIT extends AbstractIntegrationTest {
 
     static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:3.7.0");
     private static final String TOPIC = "materia.common.events";
+    private static final String GROUP = "kafka-events-it-" + UUID.randomUUID();
+    /** A probe with this note fails in its handler every time: it ends in the dead-letter topic. */
+    private static final String ALWAYS_FAILS = "always fails";
 
     static {
         KAFKA.start();
@@ -60,7 +68,7 @@ class KafkaEventsIT extends AbstractIntegrationTest {
     @DynamicPropertySource
     static void kafka(DynamicPropertyRegistry registry) {
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
-        registry.add("app.events.consumer-group", () -> "kafka-events-it-" + UUID.randomUUID());
+        registry.add("app.events.consumer-group", () -> GROUP);
     }
 
     /** A domain event of the shared kernel, so its source context is "common" and its topic materia.common.events. */
@@ -92,6 +100,9 @@ class KafkaEventsIT extends AbstractIntegrationTest {
 
         @Override
         public void handle(IntegrationEvent event) {
+            if (ALWAYS_FAILS.equals(event.payload().path("note").asText())) {
+                throw new IllegalStateException("The probe handler refuses this event");
+            }
             received.add(event);
         }
     }
@@ -154,5 +165,29 @@ class KafkaEventsIT extends AbstractIntegrationTest {
         Thread.sleep(1_000);
 
         assertThat(handler.received).extracting(IntegrationEvent::eventId).containsExactly(committed.getEventId());
+    }
+
+    @Test
+    @DisplayName("events: an event a handler keeps failing on is kept in the group's dead-letter topic, not skipped")
+    void failingEvent_endsInTheDeadLetterTopic() {
+        KafkaProbeEvent event = new KafkaProbeEvent(ALWAYS_FAILS);
+        transactions.executeWithoutResult(status -> events.publishEvent(event));
+
+        String deadLetters = TOPIC + ".dlt." + GROUP;
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ConsumerConfig.GROUP_ID_CONFIG, "dlt-reader-" + UUID.randomUUID(),
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"), new StringDeserializer(), new StringDeserializer())) {
+            consumer.subscribe(List.of(deadLetters));
+            long deadline = System.currentTimeMillis() + 90_000;
+            List<String> kept = new ArrayList<>();
+            while (kept.stream().noneMatch(value -> value.contains(event.getEventId().toString()))
+                    && System.currentTimeMillis() < deadline) {
+                consumer.poll(Duration.ofMillis(500)).forEach(record -> kept.add(record.value()));
+            }
+            assertThat(kept).as("messages in %s", deadLetters)
+                    .anySatisfy(value -> assertThat(value).contains(event.getEventId().toString(), ALWAYS_FAILS));
+        }
+        assertThat(handler.received).isEmpty();
     }
 }

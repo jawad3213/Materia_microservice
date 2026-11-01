@@ -1,5 +1,12 @@
 package com.materia.backend.common.infrastructure.messaging.outbox;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.apache.kafka.common.errors.RecordTooLargeException;
+import org.apache.kafka.common.errors.SerializationException;
+import org.apache.kafka.common.errors.TimeoutException;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.kafka.KafkaException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +33,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-/** Pending outbox messages are published in order, once acknowledged, and a failure stops the batch. */
+/**
+ * Pending outbox messages are published in order, once acknowledged; a broker failure stops the batch, a message that
+ * can never be published is parked and the later ones go on.
+ */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class OutboxRelayTest {
@@ -35,12 +45,14 @@ class OutboxRelayTest {
     @Mock private KafkaTemplate<String, Object> kafka;
     @Mock private PlatformTransactionManager transactionManager;
 
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private OutboxRelay relay;
 
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         relay = new OutboxRelay(outbox, kafka, new TransactionTemplate(transactionManager), new ObjectMapper(),
+                new StaticListableBeanFactory(Map.of("meters", meters)).getBeanProvider(MeterRegistry.class),
                 1000, 10, 1000);
     }
 
@@ -85,5 +97,45 @@ class OutboxRelayTest {
         assertTrue(first.getLastError().contains("broker down"));
         verify(kafka, times(1)).send(anyString(), anyString(), any());
         assertEquals(0, second.getAttempts());
+    }
+
+    @Test
+    @DisplayName("relay: a message that can never be published is parked, and the later ones are published")
+    void poisonMessage_isParked() {
+        OutboxMessageJpaEntity poison = message("purchaseOrder", "po-1");
+        OutboxMessageJpaEntity next = message("purchaseOrder", "po-2");
+        when(outbox.findPending(any())).thenReturn(List.of(poison, next));
+        when(kafka.send(anyString(), eq("po-1"), any())).thenReturn(CompletableFuture.failedFuture(
+                new KafkaException("Send failed", new RecordTooLargeException("The message is 2 MB"))));
+        when(kafka.send(anyString(), eq("po-2"), any()))
+                .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
+
+        assertEquals(1, relay.relayBatch());
+
+        assertNotNull(poison.getParkedAt());
+        assertNull(poison.getPublishedAt());
+        assertTrue(poison.getLastError().contains("The message is 2 MB"));
+        assertNotNull(next.getPublishedAt());
+    }
+
+    @Test
+    @DisplayName("relay: a broker failure is not the message's own, so nothing is parked")
+    void brokerFailure_isNotPermanent() {
+        assertTrue(OutboxRelay.isPermanent(new KafkaException("x", new SerializationException("bad"))));
+        assertFalse(OutboxRelay.isPermanent(new KafkaException("x", new TimeoutException("broker down"))));
+        assertFalse(OutboxRelay.isPermanent(new IllegalStateException("broker down")));
+    }
+
+    @Test
+    @DisplayName("relay: the backlog and the parked messages are metrics, for the alerts")
+    void backlog_isAMetric() {
+        when(outbox.findPending(any())).thenReturn(List.of());
+        when(outbox.countPending()).thenReturn(42L);
+        when(outbox.countParked()).thenReturn(1L);
+
+        relay.relayBatch();
+
+        assertEquals(42.0, meters.get("materia.outbox.pending").gauge().value());
+        assertEquals(1.0, meters.get("materia.outbox.parked").gauge().value());
     }
 }

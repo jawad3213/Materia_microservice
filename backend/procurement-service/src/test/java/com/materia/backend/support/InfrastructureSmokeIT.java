@@ -28,8 +28,8 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class InfrastructureSmokeIT extends AbstractIntegrationTest {
 
-    /** db/migration holds V1__init.sql to V14__procurement_shared_kernel_tables.sql; raise this with each new one. */
-    private static final int EXPECTED_MIGRATIONS = 14;
+    /** db/migration holds V1__init.sql to V15__outbox_parked_messages.sql; raise this with each new one. */
+    private static final int EXPECTED_MIGRATIONS = 15;
 
     /** The schemas the tables live in: one per service, and public for the legacy shared kernel. */
     private static final String SCHEMAS = "('identity', 'masterdata', 'procurement', 'finance', 'analytics', 'public')";

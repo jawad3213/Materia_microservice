@@ -38,6 +38,11 @@
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka</artifactId>
         </dependency>
+        <!-- The messaging's own metrics (outbox backlog, parked and dead-lettered events), when a service has a registry -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
         <!-- OpenAPI annotations on the shared controllers -->
         <dependency>
             <groupId>org.springdoc</groupId>

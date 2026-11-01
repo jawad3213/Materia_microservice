@@ -24,7 +24,8 @@ services:
   # Kafka UI (Dev only: developer inspection web UI)
   # -----------------------------------------------------------------
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    # kafbat/kafka-ui: the maintained continuation of provectuslabs/kafka-ui (abandoned since 2024), same settings
+    image: kafbat/kafka-ui:v1.5.0
     container_name: materia-kafka-ui
     restart: unless-stopped
     ports:
