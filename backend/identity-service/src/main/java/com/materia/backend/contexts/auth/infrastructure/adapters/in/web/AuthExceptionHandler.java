@@ -1,12 +1,8 @@
 package com.materia.backend.contexts.auth.infrastructure.adapters.in.web;
 
 import com.materia.backend.common.infrastructure.web.ErrorResponse;
-import com.materia.backend.contexts.auth.domain.exceptions.AccountLockedException;
 import com.materia.backend.contexts.auth.domain.exceptions.AuthenticationFailedException;
 import com.materia.backend.contexts.auth.domain.exceptions.EmailAlreadyExistsException;
-import com.materia.backend.contexts.auth.domain.exceptions.InvalidCredentialsException;
-import com.materia.backend.contexts.auth.domain.exceptions.InvalidTokenException;
-import com.materia.backend.contexts.auth.domain.exceptions.TokenExpiredException;
 import com.materia.backend.contexts.auth.domain.exceptions.UserAlreadyExistsException;
 import com.materia.backend.contexts.auth.domain.exceptions.UserNotFoundException;
 import com.materia.backend.gateway.exception.ApiErrors;
@@ -59,34 +55,6 @@ public class AuthExceptionHandler {
         );
     }
 
-    @ExceptionHandler(InvalidTokenException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidTokenException(
-            InvalidTokenException ex, WebRequest request) {
-        log.warn("Invalid token: {}", ex.getMessage());
-        return ApiErrors.response(
-                HttpStatus.BAD_REQUEST,
-                "Invalid Token",
-                "AUTH_INVALID_TOKEN",
-                ex.getMessage(),
-                request,
-                null
-        );
-    }
-
-    @ExceptionHandler(TokenExpiredException.class)
-    public ResponseEntity<ErrorResponse> handleTokenExpiredException(
-            TokenExpiredException ex, WebRequest request) {
-        log.warn("Token expired: {}", ex.getMessage());
-        return ApiErrors.response(
-                HttpStatus.BAD_REQUEST,
-                "Token Expired",
-                "AUTH_TOKEN_EXPIRED",
-                ex.getMessage(),
-                request,
-                null
-        );
-    }
-
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleUserNotFoundException(
             UserNotFoundException ex, WebRequest request) {
@@ -115,33 +83,4 @@ public class AuthExceptionHandler {
         );
     }
 
-    // ----- FINDING-006: AccountLockedException → 401 -----
-    @ExceptionHandler(AccountLockedException.class)
-    public ResponseEntity<ErrorResponse> handleAccountLockedException(
-            AccountLockedException ex, WebRequest request) {
-        log.warn("Account locked: {}", ex.getMessage());
-        return ApiErrors.response(
-                HttpStatus.UNAUTHORIZED,
-                "Account Locked",
-                "AUTH_ACCOUNT_LOCKED",
-                ex.getMessage(),
-                request,
-                null
-        );
-    }
-
-    // ----- FINDING-007: InvalidCredentialsException → 401 -----
-    @ExceptionHandler(InvalidCredentialsException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidCredentialsException(
-            InvalidCredentialsException ex, WebRequest request) {
-        log.warn("Invalid credentials: {}", ex.getMessage());
-        return ApiErrors.response(
-                HttpStatus.UNAUTHORIZED,
-                "Invalid Credentials",
-                "AUTH_INVALID_CREDENTIALS",
-                ex.getMessage(),
-                request,
-                null
-        );
-    }
 }

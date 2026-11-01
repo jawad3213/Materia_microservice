@@ -61,3 +61,9 @@ output "demo_password" {
   value       = random_password.seed.result
   sensitive   = true
 }
+
+output "keycloak_test_client_secret" {
+  description = "The realm's materia-test-runner client secret, for the tests in tests/ (KEYCLOAK_TEST_CLIENT_SECRET)"
+  value       = random_password.keycloak["test_client"].result
+  sensitive   = true
+}

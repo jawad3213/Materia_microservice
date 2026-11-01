@@ -1,246 +1,132 @@
-import axiosClient, {
-  setAccessToken,
-  getAccessToken,
-  setRefreshToken,
-  getRefreshToken,
-  setRememberMe,
-  isRememberMe,
-  clearSessionState,
-  refreshSession,
-  USER_STORAGE_KEY,
-} from '../../../shared/api/axiosClient';
-import type {
-  AuthResponse,
-  LoginCredentials,
-  ChangePasswordCredentials,
-  ResetPasswordCredentials,
-  ConfirmResetPasswordCredentials,
-  User,
-  UserRole,
-} from '../types/auth.types';
+import Keycloak, { type KeycloakTokenParsed } from 'keycloak-js';
+import { setTokenProvider, SESSION_EXPIRED_EVENT } from '../../../shared/api/axiosClient';
+import type { User, UserRole } from '../types/auth.types';
+
+/**
+ * Sign-in is Keycloak's (docs/architecture/keycloak-migration.md): its pages ask for the password, reset it and make
+ * a new account choose one; this app only holds the tokens keycloak-js obtains (authorization code with PKCE) and
+ * renews. Keycloak is served under /auth next to the app unless VITE_KEYCLOAK_URL says otherwise (local development:
+ * http://localhost:8180/auth).
+ */
+export const keycloakConfig = {
+  url: import.meta.env.VITE_KEYCLOAK_URL || `${window.location.origin}/auth`,
+  realm: import.meta.env.VITE_KEYCLOAK_REALM || 'materia',
+  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'materia-frontend',
+};
+
+const ROLES: UserRole[] = ['ADMIN', 'PURCHASER', 'RECEIVER'];
+/** The API client, whose roles in the token are the user's permissions (order:read, ...). */
+const API_CLIENT = 'materia-api';
+/** Renew the access token when it has less than this left (seconds). */
+const MIN_VALIDITY = 30;
+
+interface MateriaToken extends KeycloakTokenParsed {
+  email?: string;
+  name?: string;
+  given_name?: string;
+  family_name?: string;
+}
+
+/** The signed-in user as the access token describes them: the same id as in identity, its role and permissions. */
+export function userFromToken(token: MateriaToken | undefined): User | null {
+  if (!token?.sub) return null;
+  const realmRoles = token.realm_access?.roles ?? [];
+  const role = ROLES.find((r) => realmRoles.includes(r));
+  if (!role) return null;
+  const email = token.email ?? '';
+  const name =
+    token.name?.trim() ||
+    [token.given_name, token.family_name].filter(Boolean).join(' ').trim() ||
+    (email ? email.split('@')[0] : 'User');
+  return {
+    id: token.sub,
+    name,
+    email,
+    role,
+    permissions: token.resource_access?.[API_CLIENT]?.roles ?? [],
+  };
+}
 
 class AuthService {
-  /**
-   * Helper to normalize backend auth responses into the frontend AuthResponse structure
-   */
-  private normalizeAuthResponse(data: any): AuthResponse {
-    const backendUser = data.user ?? {};
-
-    const rawRole: UserRole =
-      backendUser.role ??
-      (typeof data.role === 'object' ? data.role?.code : data.role) ??
-      'PURCHASER';
-    const email = backendUser.email || data.email || '';
-    const userId = backendUser.id || backendUser.userId || data.userId || '';
-
-    // The login/refresh response is flat (firstName, lastName, fullName at the top level).
-    const firstName = backendUser.firstName ?? data.firstName;
-    const lastName = backendUser.lastName ?? data.lastName;
-    const fullName = (backendUser.fullName ?? data.fullName ?? [firstName, lastName].filter(Boolean).join(' '))
-      .trim();
-    const name =
-      (backendUser.name && backendUser.name.trim()) ||
-      fullName ||
-      (email ? email.split('@')[0] : 'User');
-
-    const mustChangePassword = !!(backendUser.mustChangePassword ?? data.mustChangePassword);
-    const permissions: string[] = Array.isArray(data.permissions)
-      ? data.permissions
-      : Array.isArray(backendUser.permissions)
-      ? backendUser.permissions
-      : [];
-
-    const user: User = {
-      id: userId,
-      name,
-      email,
-      role: rawRole,
-      permissions,
-      createdAt: new Date().toISOString(),
-      mustChangePassword,
-    };
-
-    return {
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      user,
-    };
-  }
+  private readonly keycloak = new Keycloak(keycloakConfig);
+  private initialized: Promise<User | null> | null = null;
+  /** What the user changed in the app since the token was issued (their name, on the profile page). */
+  private changes: Partial<User> = {};
 
   /**
-   * Log in user with email, password & rememberMe flag
+   * Restores the Keycloak session, if any, without showing a page (check-sso); resolves to the signed-in user, or
+   * null. Called once; later calls share the first.
    */
-  async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const remember = credentials.rememberMe !== false;
-    const response = await axiosClient.post<any>('/auth/login', {
-      email: credentials.email.trim(),
-      password: credentials.password,
-      rememberMe: remember,
-    });
-    const authData = this.normalizeAuthResponse(response.data);
-    this.setSession(authData, remember);
-    return authData;
-  }
-
-  /**
-   * Perform silent refresh using the stored refresh token or HttpOnly cookie
-   */
-  async refreshToken(): Promise<AuthResponse> {
-    const data = await refreshSession();
-    const authData = this.normalizeAuthResponse(data);
-    this.setSession(authData);
-    return authData;
-  }
-
-  /**
-   * Request a password reset link for the given email
-   */
-  async resetPassword(data: ResetPasswordCredentials): Promise<{ message: string }> {
-    const response = await axiosClient.post<{ message: string }>('/auth/forgot-password', {
-      email: data.email.trim(),
-    });
-    return response.data;
-  }
-
-  /**
-   * Confirm password reset with new password
-   */
-  async confirmPasswordReset(data: ConfirmResetPasswordCredentials): Promise<{ message: string }> {
-    const response = await axiosClient.post<{ message: string }>('/auth/reset-password', {
-      email: data.email ? data.email.trim() : undefined,
-      token: data.token,
-      password: data.password,
-      confirmPassword: data.confirmPassword,
-    });
-    return response.data;
-  }
-
-  /**
-   * Change the signed-in user's password (used during first-login or from the profile page).
-   * The server ends every session on a password change and returns a fresh one, which is stored here.
-   */
-  async changePassword(data: ChangePasswordCredentials): Promise<{ message: string }> {
-    const response = await axiosClient.post<any>('/auth/change-password', {
-      currentPassword: data.currentPassword,
-      newPassword: data.newPassword,
-      confirmPassword: data.confirmPassword,
-    });
-
-    const authData = this.normalizeAuthResponse(response.data);
-    // Keep the cached profile (name, avatar...) and only clear the first-login flag.
-    const currentUser = this.getStoredUser();
-    this.setSession({ ...authData, user: { ...(currentUser ?? authData.user), mustChangePassword: false } });
-
-    return { message: 'Password successfully updated.' };
-  }
-
-  /**
-   * Log out user and clear stored tokens
-   */
-  async logout(): Promise<void> {
-    try {
-      const refreshToken = getRefreshToken();
-      await axiosClient.post('/auth/logout', refreshToken ? { refreshToken } : {});
-    } catch {
-      // Silent error ignore on logout
-    } finally {
-      this.clearSession();
+  init(): Promise<User | null> {
+    if (!this.initialized) {
+      this.keycloak.onTokenExpired = () => {
+        this.keycloak.updateToken(MIN_VALIDITY).catch(() => this.expire());
+      };
+      this.initialized = this.keycloak
+        .init({
+          onLoad: 'check-sso',
+          pkceMethod: 'S256',
+          checkLoginIframe: false,
+          silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
+        })
+        .then((authenticated) => (authenticated ? this.getStoredUser() : null))
+        .catch(() => null);
     }
+    return this.initialized;
   }
 
-  /**
-   * Store access token, refresh token, and user profile according to rememberMe preference
-   */
-  setSession(authData: AuthResponse, rememberMe?: boolean): void {
-    if (rememberMe !== undefined) {
-      setRememberMe(rememberMe);
-    }
-    if (authData.accessToken) {
-      setAccessToken(authData.accessToken);
-    }
-    if (authData.refreshToken) {
-      setRefreshToken(authData.refreshToken);
-    }
-    if (authData.user) {
-      this.storeUser(authData.user);
-    }
-  }
-
-  /**
-   * Persist the cached user profile in the storage matching the rememberMe preference
-   */
-  storeUser(user: User): void {
-    const storage = isRememberMe() ? localStorage : sessionStorage;
-    storage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-    // Clean opposite storage to avoid stale user data
-    if (isRememberMe()) {
-      sessionStorage.removeItem(USER_STORAGE_KEY);
-    } else {
-      localStorage.removeItem(USER_STORAGE_KEY);
-    }
-  }
-
-  /**
-   * Clear session data from memory and storages
-   */
-  clearSession(): void {
-    clearSessionState();
-  }
-
-  /**
-   * Retrieve active access token (memory or storage fallback)
-   */
-  getStoredToken(): string | null {
-    return getAccessToken();
-  }
-
-  /**
-   * Retrieve stored refresh token
-   */
-  getRefreshToken(): string | null {
-    return getRefreshToken();
-  }
-
-  /**
-   * Retrieve stored user object
-   */
+  /** The signed-in user, from the current token; null before init or when signed out. */
   getStoredUser(): User | null {
-    const raw = isRememberMe()
-      ? (localStorage.getItem(USER_STORAGE_KEY) || sessionStorage.getItem(USER_STORAGE_KEY))
-      : (sessionStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem(USER_STORAGE_KEY));
-    if (!raw) return null;
+    const user = userFromToken(this.keycloak.tokenParsed as MateriaToken | undefined);
+    return user ? { ...user, ...this.changes } : null;
+  }
+
+  /** Keeps the user's in-app changes (their name) until the next sign-in brings them in the token. */
+  storeUser(user: User): void {
+    this.changes = { name: user.name, avatar: user.avatar };
+  }
+
+  /** A token valid for at least MIN_VALIDITY seconds, renewed if needed; null when signed out or expired. */
+  async getToken(): Promise<string | null> {
+    if (!this.keycloak.authenticated) return null;
     try {
-      return JSON.parse(raw) as User;
+      await this.keycloak.updateToken(MIN_VALIDITY);
     } catch {
+      this.expire();
       return null;
     }
+    return this.keycloak.token ?? null;
   }
 
-  /**
-   * Check if active session exists
-   */
-  isAuthenticated(): boolean {
-    return !!this.getStoredUser() && (!!this.getStoredToken() || !!this.getRefreshToken());
+  /** Keycloak's sign-in page, then back to this path. */
+  login(redirectPath = '/dashboard'): Promise<void> {
+    return this.keycloak.login({ redirectUri: new URL(redirectPath, window.location.origin).href });
   }
 
-  /**
-   * Get remembered email for login
-   */
-  getRememberedEmail(): string | null {
-    return localStorage.getItem('materia_remembered_email');
+  /** Ends the Keycloak session too, then back to the home page. */
+  logout(): Promise<void> {
+    this.changes = {};
+    return this.keycloak.logout({ redirectUri: `${window.location.origin}/` });
   }
 
-  /**
-   * Save or clear remembered email
-   */
-  setRememberedEmail(email: string | null): void {
-    if (email && email.trim()) {
-      localStorage.setItem('materia_remembered_email', email.trim());
-    } else {
-      localStorage.removeItem('materia_remembered_email');
-    }
+  /** Keycloak's own page to choose a new password, then back here. */
+  changePassword(): Promise<void> {
+    return this.keycloak.login({ action: 'UPDATE_PASSWORD', redirectUri: window.location.href });
+  }
+
+  /** Keycloak's "forgot password" page, which e-mails a reset link. */
+  forgotPasswordUrl(): string {
+    const { url, realm, clientId } = keycloakConfig;
+    return `${url}/realms/${realm}/login-actions/reset-credentials?client_id=${encodeURIComponent(clientId)}`;
+  }
+
+  private expire(): void {
+    this.keycloak.clearToken();
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
   }
 }
 
 export const authService = new AuthService();
+setTokenProvider(() => authService.getToken());
+
 export default authService;

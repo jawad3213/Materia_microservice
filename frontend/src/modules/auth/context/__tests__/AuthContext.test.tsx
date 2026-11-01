@@ -3,6 +3,13 @@ import { renderHook } from '@testing-library/react';
 import React from 'react';
 import { AuthProvider, AuthContext } from '../AuthContext';
 import authService from '../../services/authService';
+import type { User } from '../../types/auth.types';
+
+/** The Keycloak session restored for this user (authService wraps keycloak-js, not reachable in jsdom). */
+function stubSession(user: User) {
+  vi.spyOn(authService, "getStoredUser").mockReturnValue(user);
+  vi.spyOn(authService, "init").mockResolvedValue(user);
+}
 
 describe('AuthContext Role & Permission Engine', () => {
   beforeEach(() => {
@@ -14,7 +21,7 @@ describe('AuthContext Role & Permission Engine', () => {
   );
 
   it('correctly evaluates permissions for ADMIN role', async () => {
-    vi.spyOn(authService, 'getStoredUser').mockReturnValue({
+    stubSession({
       id: 'admin-1',
       name: 'Admin User',
       email: 'admin@materia.com',
@@ -32,7 +39,7 @@ describe('AuthContext Role & Permission Engine', () => {
   });
 
   it('correctly restricts permissions for PURCHASER role per permission-matrix', async () => {
-    vi.spyOn(authService, 'getStoredUser').mockReturnValue({
+    stubSession({
       id: 'purchaser-1',
       name: 'Purchaser User',
       email: 'purchaser@materia.com',
@@ -54,7 +61,7 @@ describe('AuthContext Role & Permission Engine', () => {
   });
 
   it('correctly restricts permissions for RECEIVER role per permission-matrix', async () => {
-    vi.spyOn(authService, 'getStoredUser').mockReturnValue({
+    stubSession({
       id: 'receiver-1',
       name: 'Receiver User',
       email: 'receiver@materia.com',

@@ -10,7 +10,8 @@ SQL or JPQL query names another context's table or entity.
 | Service | Contexts | Notes |
 |---|---|---|
 | API gateway | `gateway` | Validates JWTs, routes, rate-limits, traces (`X-Gateway-Trace-Id`). |
-| Identity | `auth`, `employee` | Issues RS256 tokens (`TokenIssuer`) and publishes their public key at `/.well-known/jwks.json`; owns users and employees. |
+| Keycloak | (not a context) | Signs users in and issues every access token, users' and the services' own (`keycloak-migration.md`). |
+| Identity | `auth`, `employee` | The user directory and employees; creates, renames and disables the accounts in Keycloak, under the same ids. |
 | Master data | `masterData` | Materials, categories, suppliers, stock levels. |
 | Procurement | `purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor` | One flow: PR → PO → GR → RTV. |
 | Finance | `invoice`, `payment`, `settings` | Three-way match, payments, and the settings they use (price tolerance). |
@@ -47,11 +48,11 @@ browser ─▶ nginx (frontend) ─▶ gateway ─▶ procurement (or the servic
 | Filter | Does |
 |---|---|
 | `TraceIdFilter` | Gives every request an `X-Gateway-Trace-Id` (keeps the caller's when it is a safe value), on the request to the service and on the response. |
-| `RateLimitFilter` | 120 requests a minute per client, 10 for sign-in and password reset. The client is `X-Real-IP` (set by nginx). Procurement keeps its own limiter as a second line. |
-| `BearerTokenFilter` | Verifies a bearer token with Identity's JWK set (`/.well-known/jwks.json`, cached by Nimbus); refuses forged, expired and service tokens with 401 before any service sees them. A request without a token goes on: the service decides whether its path needs one. |
+| `RateLimitFilter` | 120 requests a minute per client, 10 for `/api/v1/auth/**`. The client is `X-Real-IP` (set by nginx). Procurement keeps its own limiter as a second line. Sign-in itself is Keycloak's, rate-limited by nginx per address and by Keycloak's brute force detection per account. |
+| `BearerTokenFilter` | Verifies a bearer token with the Keycloak realm's JWK set (cached by Nimbus): issuer, audience `materia-api`, expiry; refuses forged, expired and service tokens with 401 before any service sees them. A request without a token goes on: the service decides whether its path needs one. |
 
 Configuration: `GATEWAY_PROCUREMENT_URI` (procurement's address), `GATEWAY_<SERVICE>_URI` for the others,
-`GATEWAY_JWKS_URI` (defaults to Identity's JWK set), `GATEWAY_RATE_LIMIT_*`. CORS stays in the services for now. In
+`KEYCLOAK_ISSUER_URI` (and `KEYCLOAK_REALM_URI` when the gateway reaches Keycloak at another address), `GATEWAY_RATE_LIMIT_*`. CORS stays in the services for now. In
 the browser the API is same-origin through nginx, so only the Vite dev server (calling a service directly) needs it.
 
 ## One database per service
@@ -64,7 +65,8 @@ database server of its own is a dump of its schema.
 
 | Schema | Tables |
 |---|---|
-| `identity` | users, refresh_tokens, password_reset_tokens, employees |
+| `identity` | users, employees (refresh_tokens and password_reset_tokens are unused since Keycloak: dropped later) |
+| `keycloak` | Keycloak's own tables (realm, accounts, credentials, sessions) |
 | `masterdata` | categories, materials, suppliers, supplier_payment_terms, material_stock_movements |
 | `procurement` | purchase_requisitions(+lines), purchase_orders(+lines), goods_receipts(+lines), return_to_vendor(+lines) |
 | `finance` | invoices(+lines), payments(+lines), app_settings |
@@ -102,9 +104,9 @@ a service with `./mvnw -pl <module> -am spring-boot:run` (procurement: `-pl proc
 |---|---|---|
 | `materia-common` | The shared kernel above (`com.materia.backend.common`). | Spring, JPA, Kafka |
 | `materia-grpc` | The contracts between services (`src/main/proto/materia/<service>/v1`), the stubs generated from them (`com.materia.proto.*`), and the interceptors every service installs (`com.materia.grpc.*`). | `materia-common`, grpc-java |
-| `materia-platform` | What every service runs on: security chain, token keys, error handling, database and Kafka setup, the gRPC server, channels and identity client. | `materia-common`, `materia-grpc` |
+| `materia-platform` | What every service runs on: security chain, Keycloak token verification and service tokens, error handling, database and Kafka setup, the gRPC server, channels and identity client. | `materia-common`, `materia-grpc` |
 | `procurement-service` | Procurement (`purchaseRequisition`, `purchaseOrder`, `goodsReceipt`, `returnToVendor`): REST 8080, gRPC `procurement.v1` 9090; its legacy migrations create the schemas and own the legacy tables in `public`. Its docker compose service is `procurement` locally and still `backend` on EC2 (its ECR repository too), so a rollback finds the images it redeploys. | `materia-platform` |
-| `identity-service` | Identity (`auth`, `employee`): REST 8082, gRPC `identity.v1` 9091; the only signer of tokens. | `materia-platform` |
+| `identity-service` | Identity (`auth`, `employee`): REST 8082, gRPC `identity.v1` 9091; the accounts in Keycloak (admin API). | `materia-platform` |
 | `masterdata-service` | Master data (`masterData`): REST 8083, gRPC `masterdata.v1` 9092; keeps stock from procurement's events (Kafka). | `materia-platform` |
 | `finance-service` | Finance (`invoice`, `payment`, `settings`): REST 8084, gRPC `finance.v1` 9093; reads procurement's orders and receipts (`procurement.v1`) for the three-way match. | `materia-platform` |
 | `analytics-service` | Analytics (`dashboard`, `analytics`): REST 8085; composes the other services' figures (`procurement.v1`, `masterdata.v1`, `finance.v1` metrics) and owns no table. | `materia-platform` |
@@ -148,9 +150,9 @@ Interceptors every service installs (`materia-grpc`):
 **Who may call each RPC (`GrpcPolicies`).** Part of the contracts, like the .proto files; `GrpcPoliciesTest` fails when
 an RPC has no policy. A policy names the user permissions that may call the RPC (users reach it with their own token,
 forwarded by the service serving their request) and the services that may call it with their service token (work no
-user started: jobs, event handlers, seeding; `service:<client id>`). A read RPC asks for the permission that reads the
+user started: jobs, event handlers, seeding; Keycloak's client credentials, `service:<client id>`). A read RPC asks for the permission that reads the
 same data over the REST API, so a call never shows a user more than the REST API would; a write RPC (raising a
-replenishment) for the permissions of the actions that lead to it. Only issuing a service token is open; the account
+replenishment) for the permissions of the actions that lead to it. No RPC is open; the account
 directory (`identity.v1.UserDirectory`) admits any authenticated caller, since every service shows who did what.
 `DashboardAccessPolicyTest` checks every role's dashboard only asks for figures its role may read.
 | Server | `TraceIdServerInterceptor` | Logs the call under the caller's trace id. |
@@ -190,8 +192,9 @@ adapter, the service and their tests do not change. Tests reach other services t
 (`support/fixtures/InProcessGrpc`, used by `CrossContextWiring`).
 
 A call carries the caller's token: the one of the gRPC call being served, else the signed-in user's (kept by the
-gateway's JWT filter in a `BearerTokenAuthentication`), else a service token (`subject = service:<client id>`, e.g. `service:procurement`,
-`ROLE_SERVICE`) for work no user started. The REST API refuses service tokens.
+gateway's JWT filter in a `BearerTokenAuthentication`), else a service token for work no user started: Keycloak issues it
+for the service's client credentials (`KeycloakServiceTokens`; realm role `SERVICE`, read as `subject = service:<client id>`,
+e.g. `service:procurement`, `ROLE_SERVICE`). The REST API refuses service tokens.
 
 Public lookups added for this purpose:
 

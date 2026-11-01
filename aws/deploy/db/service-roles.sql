@@ -6,8 +6,10 @@
 --   materia_identity    -> identity        materia_procurement -> procurement, public (its migrations' history and
 --   materia_masterdata  -> masterdata                              the legacy shared tables)
 --   materia_finance     -> finance         materia_analytics   -> analytics
+--   materia_keycloak    -> keycloak (Keycloak's own tables: realms, accounts, sessions; created here, filled by it)
 --
--- psql variables: identity_password, masterdata_password, procurement_password, finance_password, analytics_password.
+-- psql variables: identity_password, masterdata_password, procurement_password, finance_password, analytics_password,
+-- keycloak_password.
 --
 -- On a new database, procurement's legacy migrations still create every context's tables in public and move them to
 -- the services' schemas (V13): procurement may create schemas, and the second run hands each schema and its tables to
@@ -18,7 +20,7 @@
 -- ---- The users ----
 select format('create role %I login', r)
 from (values ('materia_identity'), ('materia_masterdata'), ('materia_procurement'), ('materia_finance'),
-             ('materia_analytics')) as roles(r)
+             ('materia_analytics'), ('materia_keycloak')) as roles(r)
 where not exists (select 1 from pg_roles where rolname = r) \gexec
 
 alter role materia_identity with login password :'identity_password';
@@ -26,6 +28,10 @@ alter role materia_masterdata with login password :'masterdata_password';
 alter role materia_procurement with login password :'procurement_password';
 alter role materia_finance with login password :'finance_password';
 alter role materia_analytics with login password :'analytics_password';
+alter role materia_keycloak with login password :'keycloak_password';
+
+-- ---- Keycloak: its schema, which it does not create itself ----
+create schema if not exists keycloak authorization materia_keycloak;
 
 -- ---- Creating schemas: procurement's legacy V13 creates the services' schemas, and each service's first migration
 -- runs "create schema if not exists" on its own, which PostgreSQL checks against the database even when it exists.
@@ -45,26 +51,26 @@ from pg_sequences where schemaname = 'public' and sequenceowner <> 'materia_proc
 select format('alter schema %I owner to %I', s.schema_name, s.role_name)
 from (values ('identity', 'materia_identity'), ('masterdata', 'materia_masterdata'),
              ('procurement', 'materia_procurement'), ('finance', 'materia_finance'),
-             ('analytics', 'materia_analytics')) as s(schema_name, role_name)
+             ('analytics', 'materia_analytics'), ('keycloak', 'materia_keycloak')) as s(schema_name, role_name)
 join information_schema.schemata n on n.schema_name = s.schema_name \gexec
 
 select format('alter table %I.%I owner to %I', t.schemaname, t.tablename, s.role_name)
 from (values ('identity', 'materia_identity'), ('masterdata', 'materia_masterdata'),
              ('procurement', 'materia_procurement'), ('finance', 'materia_finance'),
-             ('analytics', 'materia_analytics')) as s(schema_name, role_name)
+             ('analytics', 'materia_analytics'), ('keycloak', 'materia_keycloak')) as s(schema_name, role_name)
 join pg_tables t on t.schemaname = s.schema_name
 where t.tableowner <> s.role_name \gexec
 
 select format('alter sequence %I.%I owner to %I', q.schemaname, q.sequencename, s.role_name)
 from (values ('identity', 'materia_identity'), ('masterdata', 'materia_masterdata'),
              ('procurement', 'materia_procurement'), ('finance', 'materia_finance'),
-             ('analytics', 'materia_analytics')) as s(schema_name, role_name)
+             ('analytics', 'materia_analytics'), ('keycloak', 'materia_keycloak')) as s(schema_name, role_name)
 join pg_sequences q on q.schemaname = s.schema_name
 where q.sequenceowner <> s.role_name \gexec
 
 select format('revoke all on schema %I from public', schema_name)
 from information_schema.schemata
-where schema_name in ('identity', 'masterdata', 'procurement', 'finance', 'analytics') \gexec
+where schema_name in ('identity', 'masterdata', 'procurement', 'finance', 'analytics', 'keycloak') \gexec
 
 -- ---- The legacy shared tables in public: readable by a service until its own copy exists ----
 -- A service's copy migration is its version 2 (identity, masterdata, finance), 1 (analytics); procurement owns public.

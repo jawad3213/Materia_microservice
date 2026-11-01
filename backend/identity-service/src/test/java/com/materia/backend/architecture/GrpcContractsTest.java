@@ -1,8 +1,6 @@
 package com.materia.backend.architecture;
 
-import com.materia.backend.contexts.auth.domain.ports.in.ServiceTokenUseCase;
 import com.materia.backend.contexts.auth.domain.ports.in.UserDirectoryUseCase;
-import com.materia.proto.identity.v1.ServiceTokensGrpc;
 import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import io.grpc.MethodDescriptor;
 import io.grpc.ServiceDescriptor;
@@ -34,9 +32,7 @@ class GrpcContractsTest {
                 Arguments.of(UserDirectoryGrpc.getServiceDescriptor(), UserDirectoryUseCase.class,
                         Map.of("findUser", "FindUser", "findUsersWithRole", "FindUsersWithRole"),
                         // No other service looks accounts up by email.
-                        Set.of("findUserByEmail")),
-                Arguments.of(ServiceTokensGrpc.getServiceDescriptor(), ServiceTokenUseCase.class,
-                        Map.of("issue", "IssueServiceToken"), Set.of()));
+                        Set.of("findUserByEmail")));
     }
 
     @ParameterizedTest(name = "{0}")

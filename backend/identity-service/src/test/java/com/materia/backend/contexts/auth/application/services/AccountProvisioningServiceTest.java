@@ -4,7 +4,7 @@ import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.auth.domain.enums.UserStatus;
 import com.materia.backend.contexts.auth.domain.ports.out.EmailSender;
-import com.materia.backend.contexts.auth.domain.ports.out.RefreshTokenRepository;
+import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import com.materia.backend.contexts.auth.domain.valueObjects.Password;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,13 +14,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -31,10 +31,7 @@ class AccountProvisioningServiceTest {
     private UserRepository userRepository;
 
     @Mock
-    private RefreshTokenRepository refreshTokenRepository;
-
-    @Mock
-    private PasswordEncoder passwordEncoder;
+    private IdentityProvider identityProvider;
 
     @Mock
     private EmailSender emailSender;
@@ -45,17 +42,13 @@ class AccountProvisioningServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AccountProvisioningService(userRepository, refreshTokenRepository, passwordEncoder, emailSender);
+        service = new AccountProvisioningService(userRepository, identityProvider, emailSender);
     }
 
     private void stubSuccessfulSave() {
         when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(passwordEncoder.encode(anyString())).thenReturn("hashed_pwd");
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
-            User user = invocation.getArgument(0);
-            user.setId(testUserId);
-            return user;
-        });
+        when(identityProvider.createAccount(any(User.class), anyString(), anyBoolean())).thenReturn(testUserId);
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -67,7 +60,7 @@ class AccountProvisioningServiceTest {
                 () -> service.provisionAccount("john@example.com", "John", "Doe", "ADMNI", "Str0ng!Pass"));
 
         verify(userRepository, never()).save(any(User.class));
-        verifyNoInteractions(emailSender);
+        verifyNoInteractions(emailSender, identityProvider);
     }
 
     @Test
@@ -82,6 +75,22 @@ class AccountProvisioningServiceTest {
         verify(userRepository).save(captor.capture());
         assertEquals(Role.ADMIN, captor.getValue().getRole());
         assertEquals(UserStatus.ACTIVE, captor.getValue().getStatus());
+        // The directory entry takes the id of the account the identity provider created
+        assertEquals(testUserId, captor.getValue().getId());
+    }
+
+    @Test
+    @DisplayName("Should delete the new account again when its directory entry cannot be saved")
+    void shouldDeleteTheAccountWhenTheDirectoryEntryFails() {
+        when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
+        when(identityProvider.createAccount(any(User.class), anyString(), anyBoolean())).thenReturn(testUserId);
+        when(userRepository.save(any(User.class))).thenThrow(new IllegalStateException("database down"));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.provisionAccount("john@example.com", "John", "Doe", "PURCHASER", "Str0ng!Pass"));
+
+        verify(identityProvider).deleteAccount(testUserId);
+        verifyNoInteractions(emailSender);
     }
 
     @Test
@@ -119,7 +128,8 @@ class AccountProvisioningServiceTest {
         verify(emailSender).sendTemporaryPasswordEmail(eq("john@example.com"), passwordCaptor.capture());
         // The generated password must satisfy the same policy as a user chosen one.
         assertDoesNotThrow(() -> Password.fromRaw(passwordCaptor.getValue()));
-        verify(passwordEncoder).encode(passwordCaptor.getValue());
+        // The same one the account is created with, to be changed at the first sign-in
+        verify(identityProvider).createAccount(any(User.class), eq(passwordCaptor.getValue()), eq(true));
     }
 
     @Test
@@ -151,7 +161,7 @@ class AccountProvisioningServiceTest {
     }
 
     @Test
-    @DisplayName("Should disable the account and revoke every refresh token on revocation")
+    @DisplayName("Should disable the account, where the user signs in too, on revocation")
     void shouldRevokeUserAccess() {
         User user = User.builder()
                 .id(testUserId)
@@ -167,6 +177,6 @@ class AccountProvisioningServiceTest {
         assertEquals(UserStatus.INACTIVE, user.getStatus());
         assertFalse(user.isEnabled());
         verify(userRepository).save(user);
-        verify(refreshTokenRepository).revokeAllForUserId(testUserId);
+        verify(identityProvider).disableAccount(testUserId);
     }
 }

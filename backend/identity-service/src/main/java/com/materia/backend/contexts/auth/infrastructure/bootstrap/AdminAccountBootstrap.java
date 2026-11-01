@@ -3,6 +3,7 @@ package com.materia.backend.contexts.auth.infrastructure.bootstrap;
 import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.auth.domain.enums.UserStatus;
+import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import com.materia.backend.contexts.auth.domain.valueObjects.Password;
 import org.slf4j.Logger;
@@ -10,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -18,8 +18,9 @@ import org.springframework.util.StringUtils;
  * 🔹 FIRST ADMINISTRATOR
  *
  * A fresh install has no account (migrations never seed passwords). When the users table is empty, this creates one
- * administrator from APP_BOOTSTRAP_ADMIN_EMAIL and APP_BOOTSTRAP_ADMIN_PASSWORD, who must choose a new password at the
- * first sign-in. Once any account exists it does nothing, so the variables can be removed after the first start.
+ * administrator from APP_BOOTSTRAP_ADMIN_EMAIL and APP_BOOTSTRAP_ADMIN_PASSWORD, in the identity provider (Keycloak)
+ * and in the directory, who must choose a new password at the first sign-in. Once any account exists it does nothing,
+ * so the variables can be removed after the first start.
  */
 @Component
 public class AdminAccountBootstrap implements ApplicationRunner {
@@ -27,16 +28,16 @@ public class AdminAccountBootstrap implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(AdminAccountBootstrap.class);
 
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final IdentityProvider identityProvider;
     private final String email;
     private final String password;
 
     public AdminAccountBootstrap(UserRepository userRepository,
-                                 PasswordEncoder passwordEncoder,
+                                 IdentityProvider identityProvider,
                                  @Value("${app.bootstrap-admin.email:}") String email,
                                  @Value("${app.bootstrap-admin.password:}") String password) {
         this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
+        this.identityProvider = identityProvider;
         this.email = email;
         this.password = password;
     }
@@ -66,15 +67,14 @@ public class AdminAccountBootstrap implements ApplicationRunner {
 
         User admin = User.builder()
                 .email(email.trim().toLowerCase())
-                .passwordHash(passwordEncoder.encode(password))
                 .role(Role.ADMIN)
                 .status(UserStatus.ACTIVE)
                 .enabled(true)
                 .firstName("System")
                 .lastName("Administrator")
-                .mustChangePassword(true)
                 .createdBy("bootstrap")
                 .build();
+        admin.setId(identityProvider.createAccount(admin, password, true));
         userRepository.save(admin);
         log.info("[BOOTSTRAP] Created the first administrator {}; a new password is required at first sign-in.", admin.getEmail());
         return true;

@@ -5,9 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.materia.backend.gateway.config.GatewaySecurityConfig;
 import com.materia.backend.gateway.config.RateLimitConfig;
 import com.materia.backend.gateway.config.RouteConfig;
+import com.materia.backend.gateway.security.AccessTokens;
 import com.materia.backend.gateway.security.JwtAuthEntryPoint;
-import com.materia.backend.gateway.security.JwtTokenProvider;
-import com.materia.backend.gateway.security.SecurityBeansConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
@@ -29,8 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
  */
 @Import({
         GatewaySecurityConfig.class,
-        SecurityBeansConfig.class,
-        JwtTokenProvider.class,
+        AccessTokens.class,
         JwtAuthEntryPoint.class,
         RateLimitConfig.class,
         RouteConfig.class

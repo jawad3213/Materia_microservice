@@ -137,12 +137,6 @@ variable "app_url" {
   default     = ""
 }
 
-variable "refresh_cookie_secure" {
-  description = "Mark the refresh-token cookie Secure. Requires HTTPS; keep false while the site is served over plain HTTP."
-  type        = bool
-  default     = false
-}
-
 variable "contact_email" {
   description = "Contact e-mail shown in the API documentation."
   type        = string

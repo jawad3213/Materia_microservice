@@ -4,6 +4,7 @@
 //   BASE_URL       where the application is served, e.g. http://staging.example.com (no trailing /)
 //   TEST_EMAIL     an account that can read the main screens (the CD uses a dedicated staging account)
 //   TEST_PASSWORD
+//   KEYCLOAK_TEST_CLIENT_SECRET   the realm's materia-test-runner client, which signs the account in (Keycloak, /auth)
 //   VUS            peak virtual users (default 20)
 //   DURATION       how long the peak lasts (default 2m)
 //
@@ -11,7 +12,8 @@
 // suppliers, materials, invoices...) with think time. The run fails when a threshold below is crossed.
 // Read-only: it changes no data.
 //
-// Local run:  k6 run -e BASE_URL=http://localhost -e TEST_EMAIL=... -e TEST_PASSWORD=... tests/performance/load-test.js
+// Local run:  k6 run -e BASE_URL=http://localhost -e TEST_EMAIL=... -e TEST_PASSWORD=... \
+//               -e KEYCLOAK_TEST_CLIENT_SECRET=... tests/performance/load-test.js
 // =====================================================================================================
 import http from 'k6/http';
 import { check, fail, group, sleep } from 'k6';
@@ -63,26 +65,33 @@ const SCREENS = [
 const WEIGHTED = SCREENS.flatMap((screen) => Array(screen.weight).fill(screen));
 
 export function setup() {
-  if (!__ENV.TEST_EMAIL || !__ENV.TEST_PASSWORD) {
-    fail('TEST_EMAIL and TEST_PASSWORD are required');
+  if (!__ENV.TEST_EMAIL || !__ENV.TEST_PASSWORD || !__ENV.KEYCLOAK_TEST_CLIENT_SECRET) {
+    fail('TEST_EMAIL, TEST_PASSWORD and KEYCLOAK_TEST_CLIENT_SECRET are required');
   }
+  // Keycloak's token endpoint, password grant (the realm's materia-test-runner client)
   const res = http.post(
-    `${BASE_URL}/api/v1/auth/login`,
-    JSON.stringify({ email: __ENV.TEST_EMAIL, password: __ENV.TEST_PASSWORD }),
-    { headers: { 'Content-Type': 'application/json' }, tags: { kind: 'login' } },
+    `${BASE_URL}/auth/realms/materia/protocol/openid-connect/token`,
+    {
+      grant_type: 'password',
+      client_id: 'materia-test-runner',
+      client_secret: __ENV.KEYCLOAK_TEST_CLIENT_SECRET,
+      username: __ENV.TEST_EMAIL,
+      password: __ENV.TEST_PASSWORD,
+    },
+    { tags: { kind: 'login' } },
   );
-  if (res.status !== 200 || !res.json('accessToken')) {
+  if (res.status !== 200 || !res.json('access_token')) {
     fail(`sign-in failed: HTTP ${res.status} ${String(res.body).slice(0, 200)}`);
   }
   // Every screen must answer before the load starts: a 403 here means the account lacks a permission
-  const headers = { Authorization: `Bearer ${res.json('accessToken')}` };
+  const headers = { Authorization: `Bearer ${res.json('access_token')}` };
   for (const screen of SCREENS) {
     const probe = http.get(`${BASE_URL}${screen.path}`, { headers, tags: { kind: 'probe' } });
     if (probe.status !== 200) {
       fail(`${screen.name} (${screen.path}) answered HTTP ${probe.status}; the test account must be able to read it`);
     }
   }
-  return { token: res.json('accessToken') };
+  return { token: res.json('access_token') };
 }
 
 export default function (data) {

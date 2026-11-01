@@ -3,7 +3,14 @@ import { renderHook } from "@testing-library/react";
 import React from "react";
 import { AuthProvider, AuthContext } from "../AuthContext";
 import authService from "../../services/authService";
+import type { User } from "../../types/auth.types";
 import { matrix } from "../../../../test/actionMatrix";
+
+/** The Keycloak session restored for this user (authService wraps keycloak-js, not reachable in jsdom). */
+function stubSession(user: User) {
+  vi.spyOn(authService, "getStoredUser").mockReturnValue(user);
+  vi.spyOn(authService, "init").mockResolvedValue(user);
+}
 
 /**
  * [T059] When a user carries no permission list, AuthContext falls back to a built-in matrix.
@@ -22,7 +29,7 @@ describe("AuthContext fallback permissions agree with the action matrix", () => 
 
   for (const role of ["PURCHASER", "RECEIVER"] as const) {
     it(`rule: a ${role} without a permission list holds exactly the matrix's order and receipt permissions`, () => {
-      vi.spyOn(authService, "getStoredUser").mockReturnValue({
+      stubSession({
         id: `${role}-1`,
         name: role,
         email: `${role.toLowerCase()}@materia.test`,

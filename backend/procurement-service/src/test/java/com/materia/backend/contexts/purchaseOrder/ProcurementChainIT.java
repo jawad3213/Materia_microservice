@@ -4,6 +4,7 @@ import com.materia.backend.common.domain.enums.CurrencyCode;
 import com.materia.backend.common.domain.valueObjects.Money;
 import com.materia.backend.support.fixtures.TestAccount;
 import com.materia.backend.support.fixtures.TestIdentity;
+import com.materia.backend.support.fixtures.TestKeycloak;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.CreateGoodsReceiptInput;
 import com.materia.backend.contexts.goodsReceipt.application.dtos.GoodsReceiptLineInput;
 import com.materia.backend.contexts.goodsReceipt.domain.ports.in.GoodsReceiptUseCase;
@@ -23,7 +24,7 @@ import com.materia.backend.contexts.purchaseRequisition.domain.exceptions.Requis
 import com.materia.backend.contexts.purchaseRequisition.domain.ports.out.RequisitionRepository;
 import com.materia.backend.support.AbstractIntegrationTest;
 import com.materia.backend.contexts.purchaseRequisition.infrastructure.adapters.in.grpc.ReplenishmentGrpcService;
-import com.materia.backend.gateway.security.JwtTokenProvider;
+import com.materia.backend.gateway.security.AccessTokens;
 import com.materia.backend.infrastructure.grpc.JwtTokenVerifier;
 import com.materia.grpc.auth.AuthenticationServerInterceptor;
 import com.materia.grpc.auth.AuthorizationServerInterceptor;
@@ -39,6 +40,7 @@ import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -58,7 +60,8 @@ class ProcurementChainIT extends AbstractIntegrationTest {
     @Autowired private RequisitionService requisitionService;
     @Autowired private RequisitionRepository requisitions;
     @Autowired private ReplenishmentGrpcService replenishmentService;
-    @Autowired private JwtTokenProvider jwt;
+    @Autowired private AccessTokens accessTokens;
+    @Value("${test.keycloak.private-key}") private String keycloakKey;
     @Autowired private PurchaseOrderUseCase orders;
     @Autowired private GoodsReceiptUseCase receipts;
     @Autowired private TestMasterData materials;
@@ -81,12 +84,12 @@ class ProcurementChainIT extends AbstractIntegrationTest {
             InProcessServerBuilder.forName(name).directExecutor()
                     .addService(ServerInterceptors.intercept(replenishmentService,
                             new ExceptionTranslatingServerInterceptor(), new AuthorizationServerInterceptor(),
-                            new AuthenticationServerInterceptor(new JwtTokenVerifier(jwt))))
+                            new AuthenticationServerInterceptor(new JwtTokenVerifier(accessTokens))))
                     .build().start();
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException(e);
         }
-        String token = jwt.generateServiceToken("masterdata");
+        String token = new TestKeycloak(keycloakKey).serviceToken("masterdata");
         return ReplenishmentGrpc.newBlockingStub(InProcessChannelBuilder.forName(name).directExecutor()
                 .intercept(new CallerTokenClientInterceptor(() -> java.util.Optional.of(token))).build());
     }

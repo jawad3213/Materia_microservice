@@ -38,6 +38,14 @@ services:
       - materia-net
 
   # -----------------------------------------------------------------
+  # Keycloak (Dev: admin console and sign-in pages exposed on KEYCLOAK_PORT)
+  # -----------------------------------------------------------------
+  keycloak:
+    restart: unless-stopped
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+
+  # -----------------------------------------------------------------
   # Procurement (Dev: dev profile, CORS for localhost, exposed port 8080)
   # -----------------------------------------------------------------
   procurement:
@@ -108,5 +116,6 @@ services:
     build:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        VITE_KEYCLOAK_URL: http://localhost:${KEYCLOAK_PORT:-8180}/auth
     ports:
       - "${FRONTEND_PORT}:80"

@@ -1,0 +1,519 @@
+{
+  "realm": "materia",
+  "displayName": "Materia",
+  "enabled": true,
+  "sslRequired": "${KEYCLOAK_SSL_REQUIRED}",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "registrationEmailAsUsername": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "accessTokenLifespan": 900,
+  "passwordPolicy": "length(8) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1)",
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Administrateur: Accès complet au système",
+        "composite": true,
+        "composites": {
+          "client": {
+            "materia-api": [
+              "category:delete",
+              "category:read",
+              "category:write",
+              "dashboard:export",
+              "dashboard:read",
+              "invoice:read",
+              "invoice:validate",
+              "invoice:write",
+              "log:export",
+              "log:read",
+              "material:delete",
+              "material:read",
+              "material:stock:read",
+              "material:stock:write",
+              "material:write",
+              "order:cancel",
+              "order:read",
+              "order:validate",
+              "order:write",
+              "payment:read",
+              "payment:write",
+              "receipt:quality",
+              "receipt:read",
+              "receipt:write",
+              "requisition:convert",
+              "requisition:read",
+              "requisition:validate",
+              "requisition:write",
+              "return:read",
+              "return:write",
+              "setting:read",
+              "setting:write",
+              "supplier:delete",
+              "supplier:read",
+              "supplier:write",
+              "user:delete",
+              "user:read",
+              "user:write"
+            ]
+          }
+        }
+      },
+      {
+        "name": "PURCHASER",
+        "description": "Acheteur: Gestion des achats",
+        "composite": true,
+        "composites": {
+          "client": {
+            "materia-api": [
+              "category:read",
+              "category:write",
+              "dashboard:read",
+              "invoice:read",
+              "invoice:write",
+              "material:read",
+              "material:write-price",
+              "order:cancel",
+              "order:read",
+              "order:write",
+              "payment:read",
+              "receipt:read",
+              "requisition:convert",
+              "requisition:read",
+              "requisition:validate",
+              "requisition:write",
+              "return:read",
+              "return:write",
+              "supplier:read",
+              "supplier:write"
+            ]
+          }
+        }
+      },
+      {
+        "name": "RECEIVER",
+        "description": "Réceptionnaire: Gestion des stocks et réceptions",
+        "composite": true,
+        "composites": {
+          "client": {
+            "materia-api": [
+              "category:read",
+              "dashboard:read",
+              "material:read",
+              "material:stock:read",
+              "material:stock:write",
+              "order:read",
+              "receipt:quality",
+              "receipt:read",
+              "receipt:write",
+              "requisition:read",
+              "return:read",
+              "return:write",
+              "supplier:read"
+            ]
+          }
+        }
+      },
+      {
+        "name": "SERVICE",
+        "description": "A Materia service acting for itself (client credentials), never a user"
+      }
+    ],
+    "client": {
+      "materia-api": [
+        {
+          "name": "category:delete"
+        },
+        {
+          "name": "category:read"
+        },
+        {
+          "name": "category:write"
+        },
+        {
+          "name": "dashboard:export"
+        },
+        {
+          "name": "dashboard:read"
+        },
+        {
+          "name": "invoice:read"
+        },
+        {
+          "name": "invoice:validate"
+        },
+        {
+          "name": "invoice:write"
+        },
+        {
+          "name": "log:export"
+        },
+        {
+          "name": "log:read"
+        },
+        {
+          "name": "material:delete"
+        },
+        {
+          "name": "material:read"
+        },
+        {
+          "name": "material:stock:read"
+        },
+        {
+          "name": "material:stock:write"
+        },
+        {
+          "name": "material:write"
+        },
+        {
+          "name": "material:write-price"
+        },
+        {
+          "name": "order:cancel"
+        },
+        {
+          "name": "order:read"
+        },
+        {
+          "name": "order:validate"
+        },
+        {
+          "name": "order:write"
+        },
+        {
+          "name": "payment:read"
+        },
+        {
+          "name": "payment:write"
+        },
+        {
+          "name": "receipt:quality"
+        },
+        {
+          "name": "receipt:read"
+        },
+        {
+          "name": "receipt:write"
+        },
+        {
+          "name": "requisition:convert"
+        },
+        {
+          "name": "requisition:read"
+        },
+        {
+          "name": "requisition:validate"
+        },
+        {
+          "name": "requisition:write"
+        },
+        {
+          "name": "return:read"
+        },
+        {
+          "name": "return:write"
+        },
+        {
+          "name": "setting:read"
+        },
+        {
+          "name": "setting:write"
+        },
+        {
+          "name": "supplier:delete"
+        },
+        {
+          "name": "supplier:read"
+        },
+        {
+          "name": "supplier:write"
+        },
+        {
+          "name": "user:delete"
+        },
+        {
+          "name": "user:read"
+        },
+        {
+          "name": "user:write"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "materia-api",
+      "name": "Materia API",
+      "description": "The resource server: holds the permissions the realm roles grant. Signs no one in.",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "implicitFlowEnabled": false
+    },
+    {
+      "clientId": "materia-frontend",
+      "name": "Materia web app",
+      "description": "The React app: authorization code with PKCE.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "${MATERIA_APP_URL}/*",
+        "${MATERIA_DEV_APP_URL}/*"
+      ],
+      "webOrigins": [
+        "${MATERIA_APP_URL}",
+        "${MATERIA_DEV_APP_URL}"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "${KEYCLOAK_PKCE_METHOD}",
+        "post.logout.redirect.uris": "${MATERIA_APP_URL}/*##${MATERIA_DEV_APP_URL}/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ],
+      "rootUrl": "${MATERIA_APP_URL}",
+      "baseUrl": "/"
+    },
+    {
+      "clientId": "procurement",
+      "name": "Materia procurement service",
+      "description": "Client credentials: this service's own calls, no user behind them.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SERVICE_CLIENT_PROCUREMENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "masterdata",
+      "name": "Materia masterdata service",
+      "description": "Client credentials: this service's own calls, no user behind them.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SERVICE_CLIENT_MASTERDATA_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "finance",
+      "name": "Materia finance service",
+      "description": "Client credentials: this service's own calls, no user behind them.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SERVICE_CLIENT_FINANCE_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "analytics",
+      "name": "Materia analytics service",
+      "description": "Client credentials: this service's own calls, no user behind them.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SERVICE_CLIENT_ANALYTICS_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "identity",
+      "name": "Materia identity service",
+      "description": "Client credentials: identity creates, renames and disables the accounts of employees (realm-management manage-users), and imports the accounts from before Keycloak (manage-realm: remove it once they are all imported).",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SERVICE_CLIENT_IDENTITY_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "materia-test-runner",
+      "name": "Materia CD tests",
+      "description": "Password grant for the CD smoke, load and security tests (tests/): a user's token without a browser. Confidential; grants no role of its own.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEYCLOAK_TEST_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "materia-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "materia-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-procurement",
+      "enabled": true,
+      "serviceAccountClientId": "procurement",
+      "realmRoles": [
+        "SERVICE"
+      ]
+    },
+    {
+      "username": "service-account-masterdata",
+      "enabled": true,
+      "serviceAccountClientId": "masterdata",
+      "realmRoles": [
+        "SERVICE"
+      ]
+    },
+    {
+      "username": "service-account-finance",
+      "enabled": true,
+      "serviceAccountClientId": "finance",
+      "realmRoles": [
+        "SERVICE"
+      ]
+    },
+    {
+      "username": "service-account-analytics",
+      "enabled": true,
+      "serviceAccountClientId": "analytics",
+      "realmRoles": [
+        "SERVICE"
+      ]
+    },
+    {
+      "username": "service-account-identity",
+      "enabled": true,
+      "serviceAccountClientId": "identity",
+      "realmRoles": [
+        "SERVICE"
+      ],
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users",
+          "manage-realm"
+        ]
+      }
+    }
+  ],
+  "loginTheme": "keycloak",
+  "smtpServer": {
+    "host": "${KEYCLOAK_SMTP_HOST}",
+    "port": "${KEYCLOAK_SMTP_PORT}",
+    "from": "${KEYCLOAK_SMTP_FROM}",
+    "fromDisplayName": "Materia",
+    "auth": "${KEYCLOAK_SMTP_AUTH}",
+    "user": "${KEYCLOAK_SMTP_USER}",
+    "password": "${KEYCLOAK_SMTP_PASSWORD}",
+    "starttls": "${KEYCLOAK_SMTP_STARTTLS}"
+  },
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0
+}

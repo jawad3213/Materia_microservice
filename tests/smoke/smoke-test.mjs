@@ -3,29 +3,32 @@
 // Smoke test, run by the production CD right after the deploy: is the release up and serving?
 // A handful of fast checks of the public entry points, not a test suite. Node 22, no dependencies.
 //
-//   BASE_URL         where the application is served (no trailing /)
-//   SMOKE_EMAIL      optional: an account to sign in with, to check a real session end to end
-//   SMOKE_PASSWORD   (reads its profile and the dashboard; changes nothing)
+//   BASE_URL                      where the application is served (no trailing /); Keycloak under /auth
+//   SMOKE_EMAIL                   optional: an account to sign in with, to check a real session end to end
+//   SMOKE_PASSWORD                (reads its profile and the dashboard; changes nothing)
+//   KEYCLOAK_TEST_CLIENT_SECRET   with them: the realm's materia-test-runner client, which signs the account in
 //
 // Local run:  BASE_URL=http://localhost node tests/smoke/smoke-test.mjs
 // =====================================================================================================
 import { appendFileSync } from 'node:fs';
 
 const BASE_URL = (process.env.BASE_URL || 'http://localhost').replace(/\/+$/, '');
-const { SMOKE_EMAIL, SMOKE_PASSWORD } = process.env;
+const { SMOKE_EMAIL, SMOKE_PASSWORD, KEYCLOAK_TEST_CLIENT_SECRET } = process.env;
+const REALM = '/auth/realms/materia';
 const SLOW_MS = 3000;
 
 const results = [];
 
-async function call(method, path, { token, body } = {}) {
+async function call(method, path, { token, body, form } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (form !== undefined) headers['Content-Type'] = 'application/x-www-form-urlencoded';
   const started = Date.now();
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: form !== undefined ? new URLSearchParams(form).toString() : body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
   });
   const text = await res.text();
@@ -88,18 +91,21 @@ await check('a client-side route falls back to the application', async () => {
   return { ok: res.status === 200 && res.type.includes('text/html'), detail: `HTTP ${res.status}`, ms: res.ms };
 });
 
-await check('the backend validates requests', async () => {
-  const res = await call('POST', '/api/v1/auth/login', { body: {} });
-  return { ok: res.status === 400, detail: `HTTP ${res.status}`, ms: res.ms };
+await check('Keycloak serves the realm the sign-in uses', async () => {
+  const res = await call('GET', `${REALM}/.well-known/openid-configuration`);
+  return { ok: res.status === 200 && !!res.json?.issuer?.endsWith(REALM), detail: `HTTP ${res.status} ${res.json?.issuer ?? ''}`, ms: res.ms };
 });
 
-if (SMOKE_EMAIL && SMOKE_PASSWORD) {
+const client = { client_id: 'materia-test-runner', client_secret: KEYCLOAK_TEST_CLIENT_SECRET };
+if (SMOKE_EMAIL && SMOKE_PASSWORD && KEYCLOAK_TEST_CLIENT_SECRET) {
   let token;
   let refreshToken;
   await check('the smoke account signs in', async () => {
-    const res = await call('POST', '/api/v1/auth/login', { body: { email: SMOKE_EMAIL, password: SMOKE_PASSWORD } });
-    token = res.json?.accessToken;
-    refreshToken = res.json?.refreshToken;
+    const res = await call('POST', `${REALM}/protocol/openid-connect/token`, {
+      form: { ...client, grant_type: 'password', username: SMOKE_EMAIL, password: SMOKE_PASSWORD },
+    });
+    token = res.json?.access_token;
+    refreshToken = res.json?.refresh_token;
     return { ok: res.status === 200 && !!token, detail: `HTTP ${res.status}`, ms: res.ms };
   });
   await check('its profile is read from the database', async () => {
@@ -110,9 +116,12 @@ if (SMOKE_EMAIL && SMOKE_PASSWORD) {
     const res = await call('GET', '/api/v1/dashboard', { token });
     return { ok: res.status === 200 || res.status === 403, detail: `HTTP ${res.status}${res.status === 403 ? ' (no dashboard permission)' : ''}`, ms: res.ms };
   });
-  if (refreshToken) await call('POST', '/api/v1/auth/logout', { body: { refreshToken } }).catch(() => {});
+  if (refreshToken) {
+    await call('POST', `${REALM}/protocol/openid-connect/logout`, { form: { ...client, refresh_token: refreshToken } })
+      .catch(() => {});
+  }
 } else {
-  console.log('SKIP  signed-in checks (SMOKE_EMAIL / SMOKE_PASSWORD not set)');
+  console.log('SKIP  signed-in checks (SMOKE_EMAIL / SMOKE_PASSWORD / KEYCLOAK_TEST_CLIENT_SECRET not set)');
 }
 
 const failed = results.filter((r) => !r.ok);

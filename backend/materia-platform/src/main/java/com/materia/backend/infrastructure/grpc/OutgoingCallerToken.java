@@ -2,11 +2,6 @@ package com.materia.backend.infrastructure.grpc;
 
 import com.materia.backend.gateway.security.BearerTokenAuthentication;
 import com.materia.grpc.auth.GrpcCaller;
-import com.materia.grpc.errors.GrpcCalls;
-import com.materia.proto.identity.v1.IssueServiceTokenRequest;
-import com.materia.proto.identity.v1.IssueServiceTokenResponse;
-import com.materia.proto.identity.v1.ServiceTokensGrpc;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -16,26 +11,19 @@ import java.util.function.Supplier;
 /**
  * The token a call to another service carries: the one of the gRPC call being served, else the signed-in user's
  * (kept by the gateway's JWT filter in a {@link BearerTokenAuthentication}), else, for work no user started or a
- * caller authenticated without a token, a service token. Identity issues that one (identity.v1.ServiceTokens) for
- * this service's client credentials ({@code app.service-client.id} and {@code .secret}): no service but Identity
- * holds the signing key.
+ * caller authenticated without a token, a service token: Keycloak issues that one for this service's client
+ * credentials ({@link KeycloakServiceTokens}).
  *
- * <p>Created by each service's gRPC configuration, with a stub on a channel that does not use this class itself.
+ * <p>Created by each service's gRPC configuration ({@link IdentityClientConfig}).
  */
 public class OutgoingCallerToken implements Supplier<Optional<String>> {
 
-    private final ServiceTokensGrpc.ServiceTokensBlockingStub serviceTokens;
-    private final String clientId;
-    private final String clientSecret;
+    private final ServiceTokenSource serviceTokens;
     private volatile String serviceToken;
     private volatile long serviceTokenRenewAt;
 
-    public OutgoingCallerToken(ServiceTokensGrpc.ServiceTokensBlockingStub serviceTokens,
-                               @Value("${app.service-client.id}") String clientId,
-                               @Value("${app.service-client.secret}") String clientSecret) {
+    public OutgoingCallerToken(ServiceTokenSource serviceTokens) {
         this.serviceTokens = serviceTokens;
-        this.clientId = clientId;
-        this.clientSecret = clientSecret;
     }
 
     @Override
@@ -55,13 +43,9 @@ public class OutgoingCallerToken implements Supplier<Optional<String>> {
         if (serviceToken == null || now >= serviceTokenRenewAt) {
             synchronized (this) {
                 if (serviceToken == null || now >= serviceTokenRenewAt) {
-                    IssueServiceTokenResponse issued = GrpcCalls.call(() -> serviceTokens.issueServiceToken(
-                            IssueServiceTokenRequest.newBuilder()
-                                    .setClientId(clientId)
-                                    .setClientSecret(clientSecret)
-                                    .build()));
-                    serviceToken = issued.getToken();
-                    serviceTokenRenewAt = now + issued.getExpiresInSeconds() * 1000 / 2;
+                    ServiceTokenSource.IssuedServiceToken issued = serviceTokens.issue();
+                    serviceToken = issued.token();
+                    serviceTokenRenewAt = now + issued.expiresInSeconds() * 1000 / 2;
                 }
             }
         }

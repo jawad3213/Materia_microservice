@@ -15,7 +15,7 @@ locals {
 
   # Repositories whose images this environment promotes (prod: staging's), same account and region
   promotion_source_repository_arns = var.promote_from_environment == "" ? [] : [
-    for service in ["backend", "identity", "masterdata", "finance", "analytics", "gateway", "frontend"] :
+    for service in ["backend", "identity", "masterdata", "finance", "analytics", "gateway", "frontend", "keycloak"] :
     "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project}-${var.promote_from_environment}-${service}"
   ]
 
@@ -44,7 +44,6 @@ locals {
     # between them (each event reaching one service only). Each service has its own (app.events.consumer-group).
     SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET = "earliest"
     SPRING_KAFKA_LISTENER_AUTO_STARTUP      = "true"
-    JWT_EXPIRATION_MS                       = "900000"
     SPRINGDOC_API_DOCS_PATH                 = "/v3/api-docs"
     SPRINGDOC_SWAGGER_UI_PATH               = "/swagger-ui.html"
     SPRINGDOC_INFO_TITLE                    = "Materia API"
@@ -54,10 +53,15 @@ locals {
     SPRINGDOC_INFO_CONTACT_EMAIL            = var.contact_email
     APP_CORS_ALLOWED_ORIGINS                = local.app_url
     APP_LOGIN_URL                           = "${local.app_url}/login"
-    APP_RESET_PASSWORD_URL                  = "${local.app_url}/reset-password"
-    APP_AUTH_REFRESH_COOKIE_SECURE          = tostring(var.refresh_cookie_secure)
-    JAVA_TOOL_OPTIONS                       = "-XX:MaxRAMPercentage=60"
-    GATEWAY_RATE_LIMIT_MAX_RPM              = tostring(var.api_rate_limit_per_minute)
+    # Keycloak (docs/architecture/keycloak-migration.md), served under /auth by the frontend's nginx. The issuer is
+    # what tokens state and the services expect; the rest fills the realm's placeholders at its first import.
+    KEYCLOAK_ISSUER_URI        = "${local.app_url}/auth/realms/materia"
+    MATERIA_APP_URL            = local.app_url
+    MATERIA_DEV_APP_URL        = local.app_url
+    KEYCLOAK_SSL_REQUIRED      = startswith(local.app_url, "https://") ? "external" : "none"
+    KEYCLOAK_PKCE_METHOD       = "S256"
+    JAVA_TOOL_OPTIONS          = "-XX:MaxRAMPercentage=60"
+    GATEWAY_RATE_LIMIT_MAX_RPM = tostring(var.api_rate_limit_per_minute)
   }
 }
 
@@ -103,15 +107,10 @@ resource "random_password" "postgres" {
   special = false # the value goes through a docker compose .env file
 }
 
-# RS256 key pair that signs and verifies access tokens. The backend reads each as the Base64 of its PEM, so it
-# stays on one line in the docker compose .env file.
-resource "tls_private_key" "jwt" {
-  algorithm = "RSA"
-  rsa_bits  = 2048
-}
+# Keycloak signs the access tokens with its realm's own keys (docs/architecture/keycloak-migration.md).
 
-# The secret procurement presents to identity for its service tokens (identity.v1.ServiceTokens): procurement
-# sends it as SERVICE_CLIENT_SECRET, identity checks it against SERVICE_CLIENT_PROCUREMENT_SECRET.
+# The secret of procurement's Keycloak client, whose client credentials give it its own tokens: procurement sends
+# it as SERVICE_CLIENT_SECRET, the realm's client is created with SERVICE_CLIENT_PROCUREMENT_SECRET.
 resource "random_password" "service_client_procurement" {
   length  = 48
   special = false # the value goes through a docker compose .env file
@@ -123,27 +122,46 @@ moved {
   to   = random_password.service_client_procurement
 }
 
-# The secret master data presents to identity for its service tokens.
+# The secret of master data's Keycloak client.
 resource "random_password" "service_client_masterdata" {
   length  = 48
   special = false # the value goes through a docker compose .env file
 }
 
-# The secret finance presents to identity for its service tokens.
+# The secret of finance's Keycloak client.
 resource "random_password" "service_client_finance" {
   length  = 48
   special = false # the value goes through a docker compose .env file
 }
 
-# The secret analytics presents to identity for its service tokens.
+# The secret of analytics' Keycloak client.
 resource "random_password" "service_client_analytics" {
   length  = 48
   special = false # the value goes through a docker compose .env file
 }
 
+# The secret of identity's Keycloak client: it creates, renames and disables the accounts there.
+resource "random_password" "service_client_identity" {
+  length  = 48
+  special = false # the value goes through a docker compose .env file
+}
+
+# The secret of the realm's materia-test-runner client, with which the CD's tests sign their accounts in
+# (output keycloak_test_client_secret, to set as the GitHub secret KEYCLOAK_TEST_CLIENT_SECRET).
+resource "random_password" "keycloak_test_client" {
+  length  = 48
+  special = false
+}
+
+# Keycloak's first administrator (master realm), for its admin console at <app_url>/auth/admin.
+resource "random_password" "keycloak_admin" {
+  length  = 32
+  special = false
+}
+
 # Each service's database user (aws/deploy/db/service-roles.sql): it owns its schema and nothing else.
 resource "random_password" "db_service" {
-  for_each = toset(["identity", "masterdata", "procurement", "finance", "analytics"])
+  for_each = toset(["identity", "masterdata", "procurement", "finance", "analytics", "keycloak"])
   length   = 32
   special  = false # the value goes through a docker compose .env file
 }
@@ -181,8 +199,6 @@ module "app_parameters" {
   secure_parameters = merge(
     {
       POSTGRES_PASSWORD                 = random_password.postgres.result
-      JWT_PRIVATE_KEY                   = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
-      JWT_PUBLIC_KEY                    = base64encode(tls_private_key.jwt.public_key_pem)
       GRAFANA_ADMIN_PASSWORD            = random_password.grafana_admin.result
       SERVICE_CLIENT_SECRET             = random_password.service_client_procurement.result
       SERVICE_CLIENT_PROCUREMENT_SECRET = random_password.service_client_procurement.result
@@ -190,11 +206,15 @@ module "app_parameters" {
       SERVICE_CLIENT_MASTERDATA_SECRET  = random_password.service_client_masterdata.result
       SERVICE_CLIENT_FINANCE_SECRET     = random_password.service_client_finance.result
       SERVICE_CLIENT_ANALYTICS_SECRET   = random_password.service_client_analytics.result
+      SERVICE_CLIENT_IDENTITY_SECRET    = random_password.service_client_identity.result
+      KEYCLOAK_TEST_CLIENT_SECRET       = random_password.keycloak_test_client.result
+      KEYCLOAK_ADMIN_PASSWORD           = random_password.keycloak_admin.result
       DB_PASSWORD_IDENTITY              = random_password.db_service["identity"].result
       DB_PASSWORD_MASTERDATA            = random_password.db_service["masterdata"].result
       DB_PASSWORD_PROCUREMENT           = random_password.db_service["procurement"].result
       DB_PASSWORD_FINANCE               = random_password.db_service["finance"].result
       DB_PASSWORD_ANALYTICS             = random_password.db_service["analytics"].result
+      DB_PASSWORD_KEYCLOAK              = random_password.db_service["keycloak"].result
     },
     local.bootstrap_admin.secrets,
     var.extra_secrets,

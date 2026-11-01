@@ -9,8 +9,9 @@ name: CD Staging
 # Commits of staging / develop stop after stage 3. Run it by hand to redeploy a commit (e.g. to roll staging back).
 #
 # GitHub environment "staging": variables AWS_DEPLOY_ROLE_ARN, APP_URL (AWS_REGION optional);
-# secrets TEST_EMAIL / TEST_PASSWORD (a staging account that can read the main screens) and, optionally,
-# RESTRICTED_EMAIL / RESTRICTED_PASSWORD (an account without admin rights).
+# secrets TEST_EMAIL / TEST_PASSWORD (a staging account that can read the main screens), KEYCLOAK_TEST_CLIENT_SECRET
+# (the realm's materia-test-runner client that signs it in: terraform output keycloak_test_client_secret) and,
+# optionally, RESTRICTED_EMAIL / RESTRICTED_PASSWORD (an account without admin rights).
 on:
   workflow_run:
     workflows: [CI]
@@ -72,19 +73,22 @@ jobs:
       - name: Check the configuration
         env:
           TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
+          KEYCLOAK_TEST_CLIENT_SECRET: ${{ secrets.KEYCLOAK_TEST_CLIENT_SECRET }}
         run: |
           [ -n "$BASE_URL" ] || { echo "::error::Set the APP_URL variable of the staging environment"; exit 1; }
           [ -n "$TEST_EMAIL" ] || { echo "::error::Set the TEST_EMAIL / TEST_PASSWORD secrets of the staging environment"; exit 1; }
+          [ -n "$KEYCLOAK_TEST_CLIENT_SECRET" ] || { echo "::error::Set the KEYCLOAK_TEST_CLIENT_SECRET secret of the staging environment"; exit 1; }
 
       - name: Run k6
         env:
           TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          KEYCLOAK_TEST_CLIENT_SECRET: ${{ secrets.KEYCLOAK_TEST_CLIENT_SECRET }}
         run: |
           mkdir -p tests/performance/results
           docker run --rm --user "$(id -u):$(id -g)" \
             -v "$PWD/tests/performance:/scripts" -w /scripts \
-            -e BASE_URL -e TEST_EMAIL -e TEST_PASSWORD -e VUS="${{ vars.PERF_VUS || '20' }}" -e DURATION="${{ vars.PERF_DURATION || '2m' }}" \
+            -e BASE_URL -e TEST_EMAIL -e TEST_PASSWORD -e KEYCLOAK_TEST_CLIENT_SECRET -e VUS="${{ vars.PERF_VUS || '20' }}" -e DURATION="${{ vars.PERF_DURATION || '2m' }}" \
             "grafana/k6:$K6_VERSION" run --quiet load-test.js
         # The summary is written even when a threshold fails
       - name: Publish the results
@@ -124,11 +128,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # Sessions, forged tokens, enumeration, cookie flags, CORS, headers, brute-force throttling
+      # Sessions (Keycloak), forged tokens, enumeration, refresh rotation, CORS, headers, brute-force throttling
       - name: Authentication and authorization tests
         env:
           TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          KEYCLOAK_TEST_CLIENT_SECRET: ${{ secrets.KEYCLOAK_TEST_CLIENT_SECRET }}
           RESTRICTED_EMAIL: ${{ secrets.RESTRICTED_EMAIL }}
           RESTRICTED_PASSWORD: ${{ secrets.RESTRICTED_PASSWORD }}
         run: node tests/security/auth-security.mjs

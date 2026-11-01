@@ -24,7 +24,8 @@ public class UserJpaEntity extends BaseJpaEntity {
     @Column(name = "email", nullable = false, unique = true, length = 255)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
+    // Only for accounts from before Keycloak not imported there yet (KeycloakAccountImport)
+    @Column(name = "password_hash", length = 255)
     private String passwordHash;
 
     @Enumerated(EnumType.STRING)

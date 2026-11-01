@@ -33,6 +33,8 @@ x-db-roles: &db-roles
     - finance_password=${DB_PASSWORD_FINANCE:-materia_finance_local}
     - -v
     - analytics_password=${DB_PASSWORD_ANALYTICS:-materia_analytics_local}
+    - -v
+    - keycloak_password=${DB_PASSWORD_KEYCLOAK:-materia_keycloak_local}
     - -f
     - /db/service-roles.sql
   restart: "no"
@@ -122,8 +124,9 @@ services:
       # publishes the committed events of the shared outbox to materia.<context>.events.
       APP_MESSAGING_TYPE: kafka
       APP_OUTBOX_RELAY_ENABLED: "true"
-      # Verifies tokens only: identity alone signs them, and issues this service's own service tokens.
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      # Keycloak signs every token: this service verifies them, and gets its own there (client credentials).
+      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       SERVICE_CLIENT_ID: procurement
       # Before the rename the .env named it SERVICE_CLIENT_MONOLITH_SECRET: still read when the new name is unset.
       SERVICE_CLIENT_SECRET: ${SERVICE_CLIENT_PROCUREMENT_SECRET:-${SERVICE_CLIENT_MONOLITH_SECRET:-}}
@@ -148,7 +151,64 @@ services:
       - materia-net
 
   # -----------------------------------------------------------------
-  # Identity: sign-in, accounts, employees; the only signer of tokens.
+  # Keycloak: sign-in, accounts and tokens (docs/architecture/keycloak-migration.md), the services' own tokens too
+  # (client credentials). keycloak/Dockerfile: the official image with the BCrypt provider for identity's imported
+  # passwords, served under /auth. Keeps its data in PostgreSQL (schema keycloak, its own user, created by db-roles)
+  # and imports the materia realm (keycloak/materia-realm.json) on its first start; identity then creates the
+  # accounts in it.
+  # Tokens name KEYCLOAK_ISSUER_URI as issuer (the address a browser reaches it at); the services reach it at
+  # http://keycloak:8080/auth.
+  # -----------------------------------------------------------------
+  keycloak:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile
+    container_name: materia-keycloak
+    restart: on-failure
+    environment:
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_SCHEMA: keycloak
+      KC_DB_USERNAME: materia_keycloak
+      KC_DB_PASSWORD: ${DB_PASSWORD_KEYCLOAK:-materia_keycloak_local}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}/auth
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Read by the realm file's placeholders on its first import
+      MATERIA_APP_URL: http://localhost:${FRONTEND_PORT:-3000}
+      MATERIA_DEV_APP_URL: http://localhost:5173
+      KEYCLOAK_SSL_REQUIRED: external
+      KEYCLOAK_PKCE_METHOD: S256
+      KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:-}
+      KEYCLOAK_SMTP_PORT: ${KEYCLOAK_SMTP_PORT:-587}
+      KEYCLOAK_SMTP_FROM: ${KEYCLOAK_SMTP_FROM:-no-reply@materia.local}
+      KEYCLOAK_SMTP_AUTH: ${KEYCLOAK_SMTP_AUTH:-false}
+      KEYCLOAK_SMTP_USER: ${KEYCLOAK_SMTP_USER:-}
+      KEYCLOAK_SMTP_PASSWORD: ${KEYCLOAK_SMTP_PASSWORD:-}
+      KEYCLOAK_SMTP_STARTTLS: ${KEYCLOAK_SMTP_STARTTLS:-false}
+      SERVICE_CLIENT_PROCUREMENT_SECRET: ${SERVICE_CLIENT_PROCUREMENT_SECRET:-${SERVICE_CLIENT_MONOLITH_SECRET:-}}
+      SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
+      SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
+      SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
+      SERVICE_CLIENT_IDENTITY_SECRET: ${SERVICE_CLIENT_IDENTITY_SECRET}
+      KEYCLOAK_TEST_CLIENT_SECRET: ${KEYCLOAK_TEST_CLIENT_SECRET:-materia-test-runner-local}
+    healthcheck:
+      # No curl in the image: bash's /dev/tcp asks for the realm, which answers once imported (the readiness probe is UP
+      # earlier, while Keycloak still answers 503 during its first start)
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /auth/realms/materia HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      db-roles:
+        condition: service_completed_successfully
+    networks:
+      - materia-net
+
+  # -----------------------------------------------------------------
+  # Identity: accounts (kept in Keycloak) and employees, the user directory the other services read.
   # REST on 8082 (through the gateway), gRPC identity.v1 on 9091 (for the other services).
   # Connects as its own database user; starts once procurement has migrated and its schema is handed over.
   # Build its jar first: cd backend && ./mvnw -pl identity-service -am package -DskipTests
@@ -163,13 +223,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: materia_identity
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_IDENTITY:-materia_identity_local}
-      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
-      SERVICE_CLIENT_PROCUREMENT_SECRET: ${SERVICE_CLIENT_PROCUREMENT_SECRET:-${SERVICE_CLIENT_MONOLITH_SECRET:-}}
+      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
+      # Its own Keycloak client: it creates, renames and disables the accounts there
+      SERVICE_CLIENT_IDENTITY_SECRET: ${SERVICE_CLIENT_IDENTITY_SECRET}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
-      SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
-      SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
       APP_BOOTSTRAP_ADMIN_EMAIL: ${APP_BOOTSTRAP_ADMIN_EMAIL:-}
       APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:-}
     depends_on:
@@ -177,6 +235,8 @@ services:
         condition: service_completed_successfully
       procurement:
         condition: service_started
+      keycloak:
+        condition: service_healthy
     networks:
       - materia-net
 
@@ -198,7 +258,8 @@ services:
       SPRING_DATASOURCE_USERNAME: materia_masterdata
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_MASTERDATA:-materia_masterdata_local}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       SERVICE_CLIENT_MASTERDATA_SECRET: ${SERVICE_CLIENT_MASTERDATA_SECRET}
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_PROCUREMENT_TARGET: procurement:9090
@@ -229,7 +290,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: materia_finance
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_FINANCE:-materia_finance_local}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       SERVICE_CLIENT_FINANCE_SECRET: ${SERVICE_CLIENT_FINANCE_SECRET}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
       GRPC_IDENTITY_TARGET: identity:9091
@@ -260,7 +322,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: materia_analytics
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_ANALYTICS:-materia_analytics_local}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       SERVICE_CLIENT_ANALYTICS_SECRET: ${SERVICE_CLIENT_ANALYTICS_SECRET}
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_PROCUREMENT_TARGET: procurement:9090
@@ -293,6 +356,8 @@ services:
       GATEWAY_MASTERDATA_URI: http://masterdata:8083
       GATEWAY_FINANCE_URI: http://finance:8084
       GATEWAY_ANALYTICS_URI: http://analytics:8085
+      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/auth/realms/materia
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
     depends_on:
       procurement:
         condition: service_started

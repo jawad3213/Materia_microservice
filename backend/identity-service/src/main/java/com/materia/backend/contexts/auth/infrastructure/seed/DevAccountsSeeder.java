@@ -4,6 +4,7 @@ import com.materia.backend.common.infrastructure.seed.DevSeed;
 import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.auth.domain.enums.UserStatus;
+import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import com.materia.backend.contexts.auth.domain.valueObjects.Password;
 import org.slf4j.Logger;
@@ -14,7 +15,6 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
@@ -30,14 +30,14 @@ public class DevAccountsSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(DevAccountsSeeder.class);
 
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final IdentityProvider identityProvider;
     private final String password;
 
     public DevAccountsSeeder(UserRepository userRepository,
-                             PasswordEncoder passwordEncoder,
+                             IdentityProvider identityProvider,
                              @Value("${app.seed.password}") String password) {
         this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
+        this.identityProvider = identityProvider;
         this.password = password;
     }
 
@@ -53,17 +53,18 @@ public class DevAccountsSeeder implements ApplicationRunner {
         if (userRepository.findByEmail(email).isPresent()) {
             return;
         }
-        userRepository.save(User.builder()
+        User user = User.builder()
                 .email(email)
-                .passwordHash(passwordEncoder.encode(password))
                 .role(role)
                 .status(UserStatus.ACTIVE)
                 .enabled(true)
                 .firstName(firstName)
                 .lastName(lastName)
-                .mustChangePassword(false)
                 .createdBy(DevSeed.SEEDER)
-                .build());
+                .build();
+        // Created in Keycloak first, which chooses the id the directory entry takes
+        user.setId(identityProvider.createAccount(user, password, false));
+        userRepository.save(user);
         log.info("[DEV-SEED] Created the {} account {}", role.getCode(), email);
     }
 }

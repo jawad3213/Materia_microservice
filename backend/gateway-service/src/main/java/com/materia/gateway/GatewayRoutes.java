@@ -4,15 +4,21 @@ import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 
+import java.util.Collection;
+
 /**
- * What the gateway exposes. Everything else (actuator, internal endpoints) answers 404 here: only the REST API, its
- * documentation and Identity's public key are reachable from outside.
+ * What the gateway exposes. Everything else (actuator, internal endpoints) answers 404 here: only the REST API and its
+ * documentation are reachable from outside (Keycloak is reached directly, under /auth).
  *
  * <p>An extracted service gets its own routes by path prefix, checked before procurement's catch-all: Identity
- * answers /api/v1/auth, /api/v1/employees, the history of its own records (User, Employee) and its public key; master
+ * answers /api/v1/auth, /api/v1/employees and the history of its own records (User, Employee); master
  * data /api/v1/masterdata and the history of its records (Material, Supplier, Category); finance /api/v1/invoices,
  * /api/v1/payments, /api/v1/settings, the history of its records (Invoice, Payment, Setting) and the attachments of
  * invoices (every attachment request names its owner type: {@code ownerType=INVOICE}); analytics /api/v1/dashboard;
@@ -28,7 +34,6 @@ public class GatewayRoutes {
                         .path("/api/v1/auth", "/api/v1/auth/**", "/api/v1/employees", "/api/v1/employees/**",
                                 "/api/v1/audit/User/**", "/api/v1/audit/Employee/**")
                         .uri(gateway.identityUri()))
-                .route("jwks", route -> route.order(-1).path("/.well-known/jwks.json").uri(gateway.identityUri()))
                 .route("masterdata", route -> route.order(-1)
                         .path("/api/v1/masterdata/**", "/api/v1/audit/Material/**", "/api/v1/audit/Supplier/**",
                                 "/api/v1/audit/Category/**")
@@ -50,9 +55,18 @@ public class GatewayRoutes {
                 .build();
     }
 
-    /** Verifies RS256 tokens with Identity's JWK set, fetched on first use and refreshed when the key changes. */
+    /**
+     * Verifies RS256 tokens with the Keycloak realm's JWK set, fetched on first use and refreshed when the key changes:
+     * the realm must be their issuer, and the API among their audiences (docs/architecture/keycloak-migration.md).
+     */
     @Bean
     public ReactiveJwtDecoder jwtDecoder(GatewayProperties gateway) {
-        return NimbusReactiveJwtDecoder.withJwkSetUri(gateway.jwksUri()).build();
+        GatewayProperties.Keycloak realm = gateway.keycloak();
+        NimbusReactiveJwtDecoder keycloak = NimbusReactiveJwtDecoder.withJwkSetUri(realm.jwkSetUri()).build();
+        keycloak.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(realm.issuerUri()),
+                new JwtClaimValidator<Collection<String>>(JwtClaimNames.AUD,
+                        aud -> aud != null && aud.contains(realm.audience()))));
+        return keycloak;
     }
 }

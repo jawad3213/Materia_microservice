@@ -59,8 +59,8 @@ public class EmployeeOffboardingService implements EmployeeOffboardingUseCase {
         employee.terminate(termDate, reason);
 
         // Immediate revocation of auth user account and active tokens.
-        // Already issued access tokens stay valid until they expire (JWT_EXPIRATION_MS),
-        // because the gateway validates them without a database round trip.
+        // Already issued access tokens stay valid until they expire (the realm's access token
+        // lifespan, 15 minutes), because the gateway validates them without a round trip.
         if (input.revokeUserAccess() && employee.getUserId() != null) {
             if (credentialPort.isUserActive(employee.getUserId())) {
                 log.warn("[OFFBOARDING] Revoking security access and active sessions for user ID: {}", employee.getUserId());

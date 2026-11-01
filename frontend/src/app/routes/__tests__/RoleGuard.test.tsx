@@ -21,10 +21,7 @@ describe('RoleGuard Component', () => {
       login: vi.fn(),
       logout: vi.fn(),
       changePassword: vi.fn(),
-      clearMustChangePassword: vi.fn(),
       updateUser: vi.fn(),
-      resetPassword: vi.fn(),
-      confirmPasswordReset: vi.fn(),
       clearError: vi.fn(),
     });
 
@@ -62,10 +59,7 @@ describe('RoleGuard Component', () => {
       login: vi.fn(),
       logout: vi.fn(),
       changePassword: vi.fn(),
-      clearMustChangePassword: vi.fn(),
       updateUser: vi.fn(),
-      resetPassword: vi.fn(),
-      confirmPasswordReset: vi.fn(),
       clearError: vi.fn(),
     });
 

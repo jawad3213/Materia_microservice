@@ -531,6 +531,10 @@ jobs:
         # nginx in the frontend image proxies /api to the gateway, so the API is same-origin.
         run: docker build --pull --build-arg VITE_API_BASE_URL=/api/v1 -t "$PROJECT-frontend:$IMAGE_TAG" frontend/
 
+      - name: Build Keycloak image
+        # Keycloak with the BCrypt provider for identity's imported passwords, and the materia realm (keycloak/).
+        run: docker build --pull -t "$PROJECT-keycloak:$IMAGE_TAG" keycloak/
+
       - name: Scan backend image (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -617,7 +621,7 @@ jobs:
 
       - name: Save images for the push stage
         if: needs.setup.outputs.push_images == 'true'
-        run: docker save "$PROJECT-backend:$IMAGE_TAG" "$PROJECT-identity:$IMAGE_TAG" "$PROJECT-masterdata:$IMAGE_TAG" "$PROJECT-finance:$IMAGE_TAG" "$PROJECT-analytics:$IMAGE_TAG" "$PROJECT-gateway:$IMAGE_TAG" "$PROJECT-frontend:$IMAGE_TAG" | gzip -1 > images.tar.gz
+        run: docker save "$PROJECT-backend:$IMAGE_TAG" "$PROJECT-identity:$IMAGE_TAG" "$PROJECT-masterdata:$IMAGE_TAG" "$PROJECT-finance:$IMAGE_TAG" "$PROJECT-analytics:$IMAGE_TAG" "$PROJECT-gateway:$IMAGE_TAG" "$PROJECT-frontend:$IMAGE_TAG" "$PROJECT-keycloak:$IMAGE_TAG" | gzip -1 > images.tar.gz
 
       - name: Hand the images to the push stage
         if: needs.setup.outputs.push_images == 'true'
@@ -667,7 +671,7 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           gunzip -c images.tar.gz | docker load
-          for SERVICE in backend identity masterdata finance analytics gateway frontend; do
+          for SERVICE in backend identity masterdata finance analytics gateway frontend keycloak; do
             REPOSITORY="$PROJECT-$ENVIRONMENT-$SERVICE"
             TARGET="$REGISTRY/$REPOSITORY:$IMAGE_TAG"
             # Tags are immutable in ECR: a re-run of the same commit finds its image already there.

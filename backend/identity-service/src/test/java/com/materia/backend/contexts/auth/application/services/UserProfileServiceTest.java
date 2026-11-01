@@ -6,6 +6,7 @@ import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.enums.Role;
 import com.materia.backend.contexts.auth.domain.events.UserProfileUpdatedEvent;
 import com.materia.backend.contexts.auth.domain.exceptions.UserNotFoundException;
+import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.*;
 class UserProfileServiceTest {
 
     @Mock private UserRepository users;
+    @Mock private IdentityProvider identityProvider;
     @Mock private ApplicationEventPublisher events;
 
     private User user(UUID id) {
@@ -40,7 +42,7 @@ class UserProfileServiceTest {
         when(users.findById(id)).thenReturn(Optional.of(user(id)));
         when(users.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        UserProfileOutput out = new UserProfileService(users, events)
+        UserProfileOutput out = new UserProfileService(users, identityProvider, events)
                 .updateProfile(id, new UpdateProfileInput("  Ada ", " Lovelace ", "  "));
 
         assertEquals("Ada Lovelace", out.fullName());
@@ -50,6 +52,8 @@ class UserProfileServiceTest {
         assertEquals(id, event.getValue().getUserId());
         assertEquals("Ada", event.getValue().getFirstName());
         assertEquals("Lovelace", event.getValue().getLastName());
+        // Renamed where the user signs in too
+        verify(identityProvider).renameAccount(id, "Ada", "Lovelace");
     }
 
     @Test
@@ -58,7 +62,7 @@ class UserProfileServiceTest {
         UUID id = UUID.randomUUID();
         when(users.findById(id)).thenReturn(Optional.empty());
 
-        assertThrows(UserNotFoundException.class, () -> new UserProfileService(users, events)
+        assertThrows(UserNotFoundException.class, () -> new UserProfileService(users, identityProvider, events)
                 .updateProfile(id, new UpdateProfileInput("A", "B", null)));
         verifyNoInteractions(events);
     }
@@ -69,7 +73,7 @@ class UserProfileServiceTest {
         UUID id = UUID.randomUUID();
         when(users.findById(id)).thenReturn(Optional.of(user(id)));
         when(users.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
-        UserProfileService service = new UserProfileService(users, events);
+        UserProfileService service = new UserProfileService(users, identityProvider, events);
 
         assertNull(service.updateProfile(id, new UpdateProfileInput(null, "  ", null)).fullName());
         assertEquals("Ada", service.updateProfile(id, new UpdateProfileInput("Ada", null, null)).fullName());

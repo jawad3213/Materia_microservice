@@ -5,8 +5,9 @@
 # plus REGISTRY, PROJECT, ENVIRONMENT and IMAGE_TAG.
 #
 # Only the frontend publishes a port to the network: its nginx serves
-# the SPA and proxies /api to the gateway, which routes it to identity,
-# master data, finance, analytics or procurement (the "backend" service). Gateway, services, Kafka and PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
+# the SPA, proxies /auth to Keycloak (sign-in, tokens) and /api to the gateway, which routes it to identity,
+# master data, finance, analytics or procurement (the "backend" service). Gateway, services, Keycloak, Kafka and
+# PostgreSQL stay internal. Grafana and Prometheus listen on the host's loopback only:
 # reach them through an SSM port forward (see aws/README.md).
 # ===================================================================
 name: materia
@@ -61,6 +62,50 @@ services:
     logging: *logging
     networks: [internal]
 
+  # Keycloak (keycloak/Dockerfile): sign-in, accounts, sessions and every access token, users' and the services' own
+  # (docs/architecture/keycloak-migration.md). Its data in PostgreSQL (schema keycloak, its own user); served under
+  # /auth through the frontend's nginx, which it trusts for the client's address. Imports the materia realm at its
+  # first start, with the settings of .env (MATERIA_APP_URL, KEYCLOAK_*, SERVICE_CLIENT_*_SECRET); identity then
+  # imports the accounts it had.
+  keycloak:
+    image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-keycloak:${IMAGE_TAG}
+    restart: always
+    env_file: .env
+    environment:
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_SCHEMA: keycloak
+      KC_DB_USERNAME: materia_keycloak
+      KC_DB_PASSWORD: ${DB_PASSWORD_KEYCLOAK}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: ${MATERIA_APP_URL}/auth
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # The realm's mail settings (password reset e-mails): set KEYCLOAK_SMTP_* in Parameter Store (app_config)
+      KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:-}
+      KEYCLOAK_SMTP_PORT: ${KEYCLOAK_SMTP_PORT:-587}
+      KEYCLOAK_SMTP_FROM: ${KEYCLOAK_SMTP_FROM:-no-reply@materia.local}
+      KEYCLOAK_SMTP_AUTH: ${KEYCLOAK_SMTP_AUTH:-false}
+      KEYCLOAK_SMTP_USER: ${KEYCLOAK_SMTP_USER:-}
+      KEYCLOAK_SMTP_PASSWORD: ${KEYCLOAK_SMTP_PASSWORD:-}
+      KEYCLOAK_SMTP_STARTTLS: ${KEYCLOAK_SMTP_STARTTLS:-true}
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=65
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # No curl in the image: bash's /dev/tcp asks for the realm, which answers once imported (the readiness probe is UP
+      # earlier, while Keycloak still answers 503 during its first start)
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /auth/realms/materia HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    mem_limit: 768m
+    logging: *logging
+    networks: [internal]
+
   # Procurement (backend/procurement-service). Still "backend" here and in ECR: renaming the service or its
   # repository changes the deployed stack and the images a rollback redeploys, so it is a step of its own.
   # Its service client id is the image's own default ("procurement"; "monolith" before the rename), so a
@@ -75,8 +120,8 @@ services:
       SPRING_DATASOURCE_USERNAME: materia_procurement
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD_PROCUREMENT}
       APP_ATTACHMENTS_DIR: /data/attachments
-      # Identity alone signs tokens: this service verifies them, and asks identity for its own service tokens.
-      JWT_PRIVATE_KEY: ""
+      # Keycloak signs every token: this service verifies them, and gets its own there (client credentials).
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_MASTERDATA_TARGET: masterdata:9092
       # Its outbox relay publishes its own events to Kafka (every service relays its own outbox).
@@ -96,6 +141,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      keycloak:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
       interval: 15s
@@ -106,7 +153,7 @@ services:
     logging: *logging
     networks: [internal]
 
-  # Identity: sign-in, accounts, employees; the only signer of tokens. REST on 8082 (through the gateway),
+  # Identity: accounts (kept in Keycloak, through its admin API) and employees. REST on 8082 (through the gateway),
   # gRPC identity.v1 on 9091 for the backend. Needs the shared tables the backend's migrations create, so it
   # waits for the backend to be healthy.
   identity:
@@ -125,6 +172,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SPRING_KAFKA_LISTENER_AUTO_STARTUP: "true"
       SPRINGDOC_INFO_TITLE: Materia Identity API
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       MANAGEMENT_SERVER_PORT: "8081"
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus
       MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
@@ -161,7 +209,7 @@ services:
       APP_OUTBOX_RELAY_ENABLED: "true"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SPRING_KAFKA_LISTENER_AUTO_STARTUP: "true"
-      JWT_PRIVATE_KEY: ""
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_PROCUREMENT_TARGET: backend:9090
       GRPC_MONOLITH_TARGET: backend:9090 # read by images before the rename; drop after the next release
@@ -204,7 +252,7 @@ services:
       APP_OUTBOX_RELAY_ENABLED: "true"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SPRING_KAFKA_LISTENER_AUTO_STARTUP: "true"
-      JWT_PRIVATE_KEY: ""
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_PROCUREMENT_TARGET: backend:9090
       GRPC_MONOLITH_TARGET: backend:9090 # read by images before the rename; drop after the next release
@@ -245,7 +293,7 @@ services:
       SPRING_FLYWAY_DEFAULT_SCHEMA: analytics
       APP_MESSAGING_TYPE: spring
       APP_OUTBOX_RELAY_ENABLED: "false"
-      JWT_PRIVATE_KEY: ""
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       GRPC_IDENTITY_TARGET: identity:9091
       GRPC_PROCUREMENT_TARGET: backend:9090
       GRPC_MONOLITH_TARGET: backend:9090 # read by images before the rename; drop after the next release
@@ -270,7 +318,7 @@ services:
     logging: *logging
     networks: [internal]
 
-  # The API gateway: refuses invalid tokens, rate-limits, routes /api to identity or the backend
+  # The API gateway: refuses invalid tokens (Keycloak's realm keys), rate-limits, routes /api to identity or the backend
   gateway:
     image: ${REGISTRY}/${PROJECT}-${ENVIRONMENT}-gateway:${IMAGE_TAG}
     restart: always
@@ -281,6 +329,8 @@ services:
       GATEWAY_MASTERDATA_URI: http://masterdata:8083
       GATEWAY_FINANCE_URI: http://finance:8084
       GATEWAY_ANALYTICS_URI: http://analytics:8085
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI}
+      KEYCLOAK_REALM_URI: http://keycloak:8080/auth/realms/materia
       MANAGEMENT_SERVER_PORT: "8081"
       MANAGEMENT_METRICS_TAGS_ENVIRONMENT: ${ENVIRONMENT}
     depends_on:
@@ -311,6 +361,9 @@ services:
       - "80:80"
     depends_on:
       gateway:
+        condition: service_started
+      # nginx resolves the Keycloak upstream when it starts
+      keycloak:
         condition: service_started
     logging: *logging
     networks: [internal]

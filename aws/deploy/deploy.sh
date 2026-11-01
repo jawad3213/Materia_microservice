@@ -9,7 +9,7 @@
 # 2. pulls the images tagged IMAGE_TAG and restarts the stack, with
 #    the monitoring (Prometheus, Grafana) configuration in ./monitoring:
 #    the database first, then each service's database user
-#    (db/service-roles.sql), procurement (the backend), the users again
+#    (db/service-roles.sql), Keycloak, procurement (the backend), the users again
 #    (procurement's migrations may have created schemas), the rest
 # 3. waits for the backend health check; on failure rolls back to the
 #    previously deployed tag and exits non-zero
@@ -71,10 +71,10 @@ health() {
   [ -n "$id" ] && docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id"
 }
 
-# The backend, then the services that start once it is healthy
+# Keycloak and the backend, then the services that start once it is healthy
 wait_healthy() {
   local service
-  for service in backend identity masterdata finance analytics; do
+  for service in keycloak backend identity masterdata finance analytics; do
     wait_service "$service" || return 1
   done
 }
@@ -85,7 +85,7 @@ env_value() {
 
 # Each service's database user, owning its schema and nothing else (one database per service)
 apply_db_roles() {
-  docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1     -U "$(env_value POSTGRES_USER)" -d "$(env_value POSTGRES_DB)"     -v identity_password="$(env_value DB_PASSWORD_IDENTITY)"     -v masterdata_password="$(env_value DB_PASSWORD_MASTERDATA)"     -v procurement_password="$(env_value DB_PASSWORD_PROCUREMENT)"     -v finance_password="$(env_value DB_PASSWORD_FINANCE)"     -v analytics_password="$(env_value DB_PASSWORD_ANALYTICS)"     -f - <db/service-roles.sql
+  docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1     -U "$(env_value POSTGRES_USER)" -d "$(env_value POSTGRES_DB)"     -v identity_password="$(env_value DB_PASSWORD_IDENTITY)"     -v masterdata_password="$(env_value DB_PASSWORD_MASTERDATA)"     -v procurement_password="$(env_value DB_PASSWORD_PROCUREMENT)"     -v finance_password="$(env_value DB_PASSWORD_FINANCE)"     -v analytics_password="$(env_value DB_PASSWORD_ANALYTICS)"     -v keycloak_password="$(env_value DB_PASSWORD_KEYCLOAK)"     -f - <db/service-roles.sql
   log "Database users applied"
 }
 
@@ -109,6 +109,9 @@ start() {
   docker compose up -d postgres kafka
   wait_service postgres || true
   apply_db_roles
+  # Every service gets its tokens from Keycloak, and identity imports its accounts there at start-up
+  docker compose up -d keycloak
+  wait_service keycloak || true
   docker compose up -d backend
   wait_service backend || true
   apply_db_roles
@@ -120,7 +123,7 @@ start() {
 
 report_images() {
   local service id image
-  for service in backend identity masterdata finance analytics gateway frontend; do
+  for service in backend identity masterdata finance analytics gateway frontend keycloak; do
     id="$(docker compose ps -q "$service")"
     [ -n "$id" ] || continue
     image="$(docker inspect --format '{{.Image}}' "$id")"

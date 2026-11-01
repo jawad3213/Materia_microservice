@@ -27,8 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * way Spring does: each context's own advice first ({@code @Order(HIGHEST_PRECEDENCE)}), {@link GlobalExceptionHandler}
  * last.
  *
- * <p>Prevents recurrence of FINDING-006 (AccountLockedException -> 500) and FINDING-007
- * (InvalidCredentialsException -> 500).
+ * <p>Sign-in failures (FINDING-006, FINDING-007) are Keycloak's to answer since accounts moved there.
  */
 class ExceptionMappingGuardTest {
 
@@ -76,14 +75,10 @@ class ExceptionMappingGuardTest {
 
     private static final List<Class<? extends Throwable>> IN_SCOPE_EXCEPTIONS = List.of(
             // Auth (US1)
-            AccountLockedException.class,
-            InvalidCredentialsException.class,
             AuthenticationFailedException.class,
             EmailAlreadyExistsException.class,
             UserAlreadyExistsException.class,
             UserNotFoundException.class,
-            InvalidTokenException.class,
-            TokenExpiredException.class,
 
             // Employees (US4)
             EmployeeNotFoundException.class,
@@ -106,21 +101,5 @@ class ExceptionMappingGuardTest {
                     .isNotNull()
                     .isNotEqualTo(fallbackMethod);
         }
-    }
-
-    @Test
-    @DisplayName("exception guard: FINDING-006 AccountLockedException resolves to unauthorized handler")
-    void accountLockedException_doesNotMapTo500() {
-        Method resolved = resolver.resolveMethodByExceptionType(AccountLockedException.class);
-        assertThat(resolved).isNotNull();
-        assertThat(resolved.getName()).isEqualTo("handleAccountLockedException");
-    }
-
-    @Test
-    @DisplayName("exception guard: FINDING-007 InvalidCredentialsException resolves to unauthorized handler")
-    void invalidCredentialsException_doesNotMapTo500() {
-        Method resolved = resolver.resolveMethodByExceptionType(InvalidCredentialsException.class);
-        assertThat(resolved).isNotNull();
-        assertThat(resolved.getName()).isEqualTo("handleInvalidCredentialsException");
     }
 }

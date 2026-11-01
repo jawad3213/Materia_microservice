@@ -74,3 +74,19 @@ output "github_environment_variables" {
     APP_URL             = local.app_url
   }
 }
+
+output "keycloak_admin_console" {
+  description = "Keycloak's admin console (user admin, password: keycloak_admin_password_command). Needs HTTPS unless app_url is."
+  value       = "${local.app_url}/auth/admin/"
+}
+
+output "keycloak_admin_password_command" {
+  description = "Reads Keycloak's first administrator's password from Parameter Store."
+  value       = "aws ssm get-parameter --with-decryption --name /${var.project}/${var.environment}/app/KEYCLOAK_ADMIN_PASSWORD --query Parameter.Value --output text"
+}
+
+output "keycloak_test_client_secret" {
+  description = "The realm's materia-test-runner client secret: the GitHub secret KEYCLOAK_TEST_CLIENT_SECRET of the CD's tests."
+  value       = random_password.keycloak_test_client.result
+  sensitive   = true
+}

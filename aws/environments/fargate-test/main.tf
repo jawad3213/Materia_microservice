@@ -2,6 +2,7 @@
 # Fargate test environment - main.tf
 #
 #   internet ──▶ load balancer :80 (allowed_cidrs only) ──▶ frontend (nginx) ──/api──▶ gateway ──▶ services
+#                                                                              └──/auth─▶ keycloak
 #
 # Every container is an ECS service on Fargate, in public subnets with a public address (no NAT gateway to pay for),
 # reachable from the others only, by name: <service>.materia.internal (Cloud Map private DNS). PostgreSQL and Kafka
@@ -19,7 +20,7 @@ locals {
   namespace = "materia.internal"
   app_url   = "http://${aws_lb.app.dns_name}"
 
-  host = { for s in ["postgres", "kafka", "procurement", "identity", "masterdata", "finance", "analytics", "gateway"] :
+  host = { for s in ["postgres", "kafka", "keycloak", "procurement", "identity", "masterdata", "finance", "analytics", "gateway"] :
   s => "${s}.${local.namespace}" }
 
   jdbc_url = "jdbc:postgresql://${local.host.postgres}:5432/materia"
@@ -103,7 +104,7 @@ module "ecr" {
   source = "../../modules/ecr"
 
   name         = local.name
-  repositories = ["procurement", "identity", "masterdata", "finance", "analytics", "gateway", "frontend"]
+  repositories = ["procurement", "identity", "masterdata", "finance", "analytics", "gateway", "frontend", "keycloak"]
   keep_images  = 5
   force_delete = true # destroyed with the environment, images included
   tags         = local.tags
@@ -147,13 +148,15 @@ resource "random_password" "postgres" {
 }
 
 resource "random_password" "db_service" {
-  for_each = toset(["identity", "masterdata", "procurement", "finance", "analytics"])
+  for_each = toset(["identity", "masterdata", "procurement", "finance", "analytics", "keycloak"])
   length   = 32
   special  = false
 }
 
+# Each service's Keycloak client (its own tokens; identity's manages the accounts), the CD tests' client, and
+# Keycloak's administrator
 resource "random_password" "service_client" {
-  for_each = toset(["procurement", "masterdata", "finance", "analytics"])
+  for_each = toset(["procurement", "masterdata", "finance", "analytics", "identity"])
   length   = 48
   special  = false
 }
@@ -168,19 +171,20 @@ resource "random_password" "seed" {
   override_special = "!@%^*.,?"
 }
 
-resource "tls_private_key" "jwt" {
-  algorithm = "RSA"
-  rsa_bits  = 2048
+resource "random_password" "keycloak" {
+  for_each = toset(["admin", "test_client"])
+  length   = 32
+  special  = false
 }
 
 locals {
   secret_path = "/${var.project}/${var.environment}/secrets"
   secrets = merge(
     {
-      POSTGRES_PASSWORD = random_password.postgres.result
-      JWT_PRIVATE_KEY   = base64encode(tls_private_key.jwt.private_key_pem_pkcs8)
-      JWT_PUBLIC_KEY    = base64encode(tls_private_key.jwt.public_key_pem)
-      APP_SEED_PASSWORD = random_password.seed.result
+      POSTGRES_PASSWORD           = random_password.postgres.result
+      APP_SEED_PASSWORD           = random_password.seed.result
+      KEYCLOAK_ADMIN_PASSWORD     = random_password.keycloak["admin"].result
+      KEYCLOAK_TEST_CLIENT_SECRET = random_password.keycloak["test_client"].result
     },
     { for u, p in random_password.db_service : "DB_PASSWORD_${upper(u)}" => p.result },
     { for c, p in random_password.service_client : "SERVICE_CLIENT_${upper(c)}_SECRET" => p.result },
@@ -295,18 +299,17 @@ locals {
     SPRING_KAFKA_BOOTSTRAP_SERVERS            = local.kafka
     SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET   = "earliest"
     SPRING_KAFKA_LISTENER_AUTO_STARTUP        = "true"
-    JWT_EXPIRATION_MS                         = "900000"
     APP_CORS_ALLOWED_ORIGINS                  = local.app_url
     APP_LOGIN_URL                             = "${local.app_url}/login"
-    APP_RESET_PASSWORD_URL                    = "${local.app_url}/reset-password"
-    APP_AUTH_REFRESH_COOKIE_SECURE            = "false" # plain HTTP: no certificate in a test environment
+    KEYCLOAK_ISSUER_URI                       = "${local.app_url}/auth/realms/materia"
+    KEYCLOAK_REALM_URI                        = "http://${local.host.keycloak}:8080/auth/realms/materia"
     JAVA_TOOL_OPTIONS                         = "-XX:MaxRAMPercentage=60"
     MANAGEMENT_SERVER_PORT                    = "8081"
     MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE = "health,info,prometheus"
     MANAGEMENT_METRICS_TAGS_ENVIRONMENT       = var.environment
     GRPC_IDENTITY_TARGET                      = "${local.host.identity}:9091"
   }
-  spring_secrets = ["JWT_PUBLIC_KEY", "APP_SEED_PASSWORD"]
+  spring_secrets = ["APP_SEED_PASSWORD"]
   spring_health  = ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness | grep -q UP"]
 
   containers = {
@@ -345,6 +348,43 @@ locals {
       secrets = {}
       health  = null
     }
+    # Sign-in, accounts and every access token (keycloak/Dockerfile); its data in PostgreSQL (schema keycloak).
+    # Over plain HTTP the browser's sign-in does not work (the web app's Keycloak library needs HTTPS): the API is
+    # tested with the materia-test-runner client (password grant).
+    keycloak = {
+      image  = local.image.keycloak
+      cpu    = 512
+      memory = 1024
+      ports  = [8080]
+      env = {
+        KC_DB_URL                       = local.jdbc_url
+        KC_DB_SCHEMA                    = "keycloak"
+        KC_DB_USERNAME                  = "materia_keycloak"
+        KC_HTTP_ENABLED                 = "true"
+        KC_HOSTNAME                     = "${local.app_url}/auth"
+        KC_HOSTNAME_BACKCHANNEL_DYNAMIC = "true"
+        KC_PROXY_HEADERS                = "xforwarded"
+        KC_BOOTSTRAP_ADMIN_USERNAME     = "admin"
+        MATERIA_APP_URL                 = local.app_url
+        MATERIA_DEV_APP_URL             = local.app_url
+        KEYCLOAK_SSL_REQUIRED           = "none"
+        KEYCLOAK_PKCE_METHOD            = "S256"
+        KEYCLOAK_SMTP_HOST              = ""
+        KEYCLOAK_SMTP_PORT              = "587"
+        KEYCLOAK_SMTP_FROM              = "no-reply@materia.local"
+        KEYCLOAK_SMTP_AUTH              = "false"
+        KEYCLOAK_SMTP_USER              = ""
+        KEYCLOAK_SMTP_PASSWORD          = ""
+        KEYCLOAK_SMTP_STARTTLS          = "false"
+      }
+      secrets = merge({
+        KC_DB_PASSWORD              = "DB_PASSWORD_KEYCLOAK"
+        KC_BOOTSTRAP_ADMIN_PASSWORD = "KEYCLOAK_ADMIN_PASSWORD"
+        KEYCLOAK_TEST_CLIENT_SECRET = "KEYCLOAK_TEST_CLIENT_SECRET"
+        },
+      { for c in keys(random_password.service_client) : "SERVICE_CLIENT_${upper(c)}_SECRET" => "SERVICE_CLIENT_${upper(c)}_SECRET" })
+      health = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /auth/realms/materia HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+    }
     procurement = {
       image  = local.image.procurement
       cpu    = 1024
@@ -353,7 +393,6 @@ locals {
       env = merge(local.spring_env, {
         SPRING_DATASOURCE_USERNAME   = "materia_procurement"
         SPRING_FLYWAY_DEFAULT_SCHEMA = "public"
-        JWT_PRIVATE_KEY              = ""
         GRPC_MASTERDATA_TARGET       = "${local.host.masterdata}:9092"
         APP_ATTACHMENTS_STORAGE      = "s3"
         APP_ATTACHMENTS_S3_BUCKET    = aws_s3_bucket.attachments.bucket
@@ -375,12 +414,8 @@ locals {
         SPRINGDOC_INFO_TITLE         = "Materia Identity API"
       })
       secrets = merge({ for s in local.spring_secrets : s => s }, {
-        SPRING_DATASOURCE_PASSWORD        = "DB_PASSWORD_IDENTITY"
-        JWT_PRIVATE_KEY                   = "JWT_PRIVATE_KEY"
-        SERVICE_CLIENT_PROCUREMENT_SECRET = "SERVICE_CLIENT_PROCUREMENT_SECRET"
-        SERVICE_CLIENT_MASTERDATA_SECRET  = "SERVICE_CLIENT_MASTERDATA_SECRET"
-        SERVICE_CLIENT_FINANCE_SECRET     = "SERVICE_CLIENT_FINANCE_SECRET"
-        SERVICE_CLIENT_ANALYTICS_SECRET   = "SERVICE_CLIENT_ANALYTICS_SECRET"
+        SPRING_DATASOURCE_PASSWORD     = "DB_PASSWORD_IDENTITY"
+        SERVICE_CLIENT_IDENTITY_SECRET = "SERVICE_CLIENT_IDENTITY_SECRET"
       })
       health = local.spring_health
     }
@@ -392,7 +427,6 @@ locals {
       env = merge(local.spring_env, {
         SPRING_DATASOURCE_USERNAME   = "materia_masterdata"
         SPRING_FLYWAY_DEFAULT_SCHEMA = "masterdata"
-        JWT_PRIVATE_KEY              = ""
         GRPC_PROCUREMENT_TARGET      = "${local.host.procurement}:9090"
         SPRINGDOC_INFO_TITLE         = "Materia Master Data API"
       })
@@ -410,7 +444,6 @@ locals {
       env = merge(local.spring_env, {
         SPRING_DATASOURCE_USERNAME   = "materia_finance"
         SPRING_FLYWAY_DEFAULT_SCHEMA = "finance"
-        JWT_PRIVATE_KEY              = ""
         GRPC_PROCUREMENT_TARGET      = "${local.host.procurement}:9090"
         APP_ATTACHMENTS_STORAGE      = "s3"
         APP_ATTACHMENTS_S3_BUCKET    = aws_s3_bucket.attachments.bucket
@@ -432,7 +465,6 @@ locals {
         SPRING_FLYWAY_DEFAULT_SCHEMA = "analytics"
         APP_MESSAGING_TYPE           = "spring"
         APP_OUTBOX_RELAY_ENABLED     = "false"
-        JWT_PRIVATE_KEY              = ""
         GRPC_PROCUREMENT_TARGET      = "${local.host.procurement}:9090"
         GRPC_MASTERDATA_TARGET       = "${local.host.masterdata}:9092"
         GRPC_FINANCE_TARGET          = "${local.host.finance}:9093"
@@ -455,6 +487,8 @@ locals {
         GATEWAY_MASTERDATA_URI                     = "http://${local.host.masterdata}:8083"
         GATEWAY_FINANCE_URI                        = "http://${local.host.finance}:8084"
         GATEWAY_ANALYTICS_URI                      = "http://${local.host.analytics}:8085"
+        KEYCLOAK_ISSUER_URI                        = "${local.app_url}/auth/realms/materia"
+        KEYCLOAK_REALM_URI                         = "http://${local.host.keycloak}:8080/auth/realms/materia"
         GATEWAY_RATE_LIMIT_MAX_REQUESTS_PER_MINUTE = tostring(var.api_rate_limit_per_minute)
         MANAGEMENT_SERVER_PORT                     = "8081"
         MANAGEMENT_METRICS_TAGS_ENVIRONMENT        = var.environment
@@ -469,7 +503,8 @@ locals {
       memory = 512
       ports  = [80]
       env = {
-        MATERIA_GATEWAY_UPSTREAM = "${local.host.gateway}:8080"
+        MATERIA_GATEWAY_UPSTREAM  = "${local.host.gateway}:8080"
+        MATERIA_KEYCLOAK_UPSTREAM = "${local.host.keycloak}:8080"
         # The load balancer is in the VPC: its X-Forwarded-For gives the client's address (the gateway's rate limit)
         MATERIA_TRUSTED_PROXY = var.vpc_cidr
       }
@@ -602,7 +637,8 @@ resource "aws_ecs_task_definition" "db_roles" {
       "psql -q -v ON_ERROR_STOP=1",
       "-v identity_password=\"$DB_PASSWORD_IDENTITY\" -v masterdata_password=\"$DB_PASSWORD_MASTERDATA\"",
       "-v procurement_password=\"$DB_PASSWORD_PROCUREMENT\" -v finance_password=\"$DB_PASSWORD_FINANCE\"",
-      "-v analytics_password=\"$DB_PASSWORD_ANALYTICS\" -f /tmp/service-roles.sql",
+      "-v analytics_password=\"$DB_PASSWORD_ANALYTICS\" -v keycloak_password=\"$DB_PASSWORD_KEYCLOAK\"",
+      "-f /tmp/service-roles.sql",
     ])]
     environment = [
       { name = "PGHOST", value = local.host.postgres },
@@ -611,7 +647,7 @@ resource "aws_ecs_task_definition" "db_roles" {
       { name = "ROLES_SQL", value = filebase64("${path.module}/../../deploy/db/service-roles.sql") },
     ]
     secrets = [for name in ["POSTGRES_PASSWORD", "DB_PASSWORD_IDENTITY", "DB_PASSWORD_MASTERDATA",
-      "DB_PASSWORD_PROCUREMENT", "DB_PASSWORD_FINANCE", "DB_PASSWORD_ANALYTICS"] :
+      "DB_PASSWORD_PROCUREMENT", "DB_PASSWORD_FINANCE", "DB_PASSWORD_ANALYTICS", "DB_PASSWORD_KEYCLOAK"] :
     { name = name == "POSTGRES_PASSWORD" ? "PGPASSWORD" : name, valueFrom = local.secret_arn[name] }]
     logConfiguration = {
       logDriver = "awslogs"

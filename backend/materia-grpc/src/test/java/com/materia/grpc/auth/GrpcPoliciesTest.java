@@ -2,7 +2,6 @@ package com.materia.grpc.auth;
 
 import com.materia.proto.audit.v1.ChangeHistoryGrpc;
 import com.materia.proto.finance.v1.FinanceMetricsGrpc;
-import com.materia.proto.identity.v1.ServiceTokensGrpc;
 import com.materia.proto.identity.v1.UserDirectoryGrpc;
 import com.materia.proto.masterdata.v1.MasterDataMetricsGrpc;
 import com.materia.proto.masterdata.v1.MaterialCatalogGrpc;
@@ -41,7 +40,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 class GrpcPoliciesTest {
 
     private static final List<ServiceDescriptor> CONTRACTS = List.of(
-            ServiceTokensGrpc.getServiceDescriptor(), UserDirectoryGrpc.getServiceDescriptor(),
+            UserDirectoryGrpc.getServiceDescriptor(),
             MaterialCatalogGrpc.getServiceDescriptor(), MasterDataMetricsGrpc.getServiceDescriptor(),
             PurchaseOrderLookupGrpc.getServiceDescriptor(), GoodsReceiptLookupGrpc.getServiceDescriptor(),
             ReplenishmentGrpc.getServiceDescriptor(), ProcurementMetricsGrpc.getServiceDescriptor(),
@@ -100,11 +99,10 @@ class GrpcPoliciesTest {
     }
 
     @Test
-    @DisplayName("policies: only issuing a service token is open; reads ask for the permission that reads them over REST")
+    @DisplayName("policies: no RPC is open; reads ask for the permission that reads them over REST")
     void policies() {
         assertThat(GrpcPolicies.all().entrySet()).filteredOn(e -> e.getValue().kind() == RpcPolicy.Kind.OPEN)
-                .extracting(Map.Entry::getKey)
-                .containsExactly(ServiceTokensGrpc.getIssueServiceTokenMethod().getFullMethodName());
+                .isEmpty();
         assertThat(GrpcPolicies.of(FinanceMetricsGrpc.getLatestInvoicesMethod().getFullMethodName()).orElseThrow()
                 .permissions()).containsExactly("invoice:read");
         assertThat(GrpcPolicies.of("unknown.v1.Service/Method")).isEmpty();

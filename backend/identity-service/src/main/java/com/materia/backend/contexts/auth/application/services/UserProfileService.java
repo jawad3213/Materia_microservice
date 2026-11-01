@@ -6,6 +6,7 @@ import com.materia.backend.contexts.auth.domain.entities.User;
 import com.materia.backend.contexts.auth.domain.events.UserProfileUpdatedEvent;
 import com.materia.backend.contexts.auth.domain.exceptions.UserNotFoundException;
 import com.materia.backend.contexts.auth.domain.ports.in.UserProfileUseCase;
+import com.materia.backend.contexts.auth.domain.ports.out.IdentityProvider;
 import com.materia.backend.contexts.auth.domain.ports.out.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -18,10 +19,13 @@ import java.util.UUID;
 public class UserProfileService implements UserProfileUseCase {
 
     private final UserRepository userRepository;
+    private final IdentityProvider identityProvider;
     private final ApplicationEventPublisher eventPublisher;
 
-    public UserProfileService(UserRepository userRepository, ApplicationEventPublisher eventPublisher) {
+    public UserProfileService(UserRepository userRepository, IdentityProvider identityProvider,
+                              ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
+        this.identityProvider = identityProvider;
         this.eventPublisher = eventPublisher;
     }
 
@@ -43,6 +47,8 @@ public class UserProfileService implements UserProfileUseCase {
         user.setFullName(fullName.isEmpty() ? null : fullName);
         user.setPhone(trimToNull(input.phone()));
         User saved = userRepository.save(user);
+        // The sign-in pages and the tokens' name claims show the name the identity provider has
+        identityProvider.renameAccount(saved.getId(), saved.getFirstName(), saved.getLastName());
         eventPublisher.publishEvent(new UserProfileUpdatedEvent(
                 saved.getId(), saved.getFirstName(), saved.getLastName(), saved.getPhone()));
         return toOutput(saved);
