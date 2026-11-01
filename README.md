@@ -40,10 +40,10 @@ Dans de nombreuses entreprises, la gestion des approvisionnements souffre de pro
 ### ✨ Fonctionnalités Principales
 
 #### 🔐 1. Authentification & Sécurité Avancée
-- **Authentification double jeton (JWT)** : Jeton d'accès (*Access Token*) à courte durée de vie et jeton de rafraîchissement (*Refresh Token*) transmis sous forme de cookie sécurisé `HttpOnly` avec rotation automatique.
-- **Cycle complet de gestion des identifiants** : Récupération de mot de passe oublié par e-mail avec jeton d'autorisation temporaire à usage unique, et modification sécurisée du mot de passe connecté.
+- **Authentification par Keycloak (OpenID Connect)** : la connexion, les sessions et les jetons sont gérés par Keycloak (realm `materia`). L'application web se connecte par *authorization code* avec PKCE (keycloak-js) ; les jetons d'accès (RS256, 15 minutes) sont renouvelés automatiquement et les jetons de rafraîchissement sont à usage unique.
+- **Cycle complet de gestion des identifiants** : mot de passe oublié, changement de mot de passe et mot de passe temporaire à la première connexion, par les pages de Keycloak. Les services obtiennent leurs propres jetons par *client credentials*.
 - **Contrôle d'accès basé sur les rôles (RBAC)** : Gestion différenciée des habilitations pour les rôles **Administrateur** (`ADMIN`), **Acheteur** (`PURCHASER`) et **Réceptionnaire** (`RECEIVER`).
-- **Protection par limitation de débit (*Rate Limiting*)** : Quota global (120 req/min) et protection renforcée anti-bruteforce sur les endpoints sensibles d'authentification (10 req/min par IP).
+- **Protection par limitation de débit (*Rate Limiting*)** : Quota global de l'API (120 req/min par client) ; la connexion est protégée par nginx (20 tentatives/min par adresse) et par la détection de force brute de Keycloak (par compte).
 
 #### 📋 2. Demandes d'Achat (*Purchase Requisitions*)
 - Création et transmission numérique des demandes d'achats internes avec sélection de matériaux et quantités requises.
@@ -99,7 +99,7 @@ Materia n'est pas une simple application CRUD basique. Elle est conçue selon le
 - **11 Bounded Contexts étanches** : Chaque capacité métier (Authentification, Employés, Demandes d'achat, Données maîtres, Facturation, etc.) est isolée dans son propre domaine avec une séparation stricte entre couches Métier, Application et Infrastructure.
 - **Indépendance totale du Domaine Métier** : Les règles fondamentales et entités métier ne dépendent d'aucun framework, d'aucune base de données, ni d'aucun protocole de transport.
 - **Communication Événementielle Hybride** : Les modules communiquent via des événements applicatifs Spring Events en environnement local, et basculent automatiquement sur un cluster distribué **Apache Kafka** en production par simple variable de configuration.
-- **Passerelle d'API Centralisée (*API Gateway Pattern*)** : Filtre d'entrée unique gérant le routage intelligent, la validation des jetons JWT, la limitation du trafic et la conformité CORS.
+- **Passerelle d'API Centralisée (*API Gateway Pattern*)** : Filtre d'entrée unique gérant le routage intelligent, la validation des jetons Keycloak, la limitation du trafic et la conformité CORS.
 
 ---
 
@@ -107,10 +107,10 @@ Materia n'est pas une simple application CRUD basique. Elle est conçue selon le
 
 | Mécanisme | Détail de l'Implémentation |
 |---|---|
-| **Authentification JWT Dual-Token** | Émission de jetons d'accès JWT signés (HMAC SHA-256) via la bibliothèque JJWT 0.12.5. |
-| **Rotation des Refresh Tokens** | Stockage sécurisé des jetons de renouvellement dans des cookies `HttpOnly`, `SameSite=Lax` (ou `Strict`), révoqués après usage unique. |
+| **Authentification Keycloak (OIDC)** | Keycloak émet tous les jetons d'accès (RS256) ; chaque service et la passerelle les vérifient localement avec les clés du realm (émetteur, audience `materia-api`, expiration). |
+| **Rotation des Refresh Tokens** | Gérée par Keycloak : chaque jeton de rafraîchissement ne sert qu'une fois ; la déconnexion termine la session. |
 | **Autorisation basée sur les rôles (RBAC)** | Sécurisation granulaire au niveau méthode (`@PreAuthorize`) avec les rôles `ADMIN`, `PURCHASER`, `RECEIVER`. |
-| **Limitation de Débit (*Rate Limiting*)** | Prévention des attaques par déni de service et force brute (120 req/min global, 10 req/min sur l'authentification). |
+| **Limitation de Débit (*Rate Limiting*)** | Prévention des attaques par déni de service (120 req/min par client sur l'API) et par force brute (nginx et Keycloak sur la connexion). |
 | **Journalisation Complète des Requêtes** | Traçabilité de chaque appel HTTP (méthode, URI, code statut, temps de réponse) via un filtre dédié. |
 | **Gestion Fine des Origines CORS** | Restriction stricte des origines autorisées, configurable par profil d'environnement. |
 
@@ -151,7 +151,7 @@ L'intégralité du projet est conteneurisée et prête à être déployée à gr
 ┌──────────────────────────────▼──────────────────────────────────────┐
 │                  PASSERELLE D'API (API GATEWAY)                     │
 │  ┌────────────────────┬─────────────────────┬────────────────────┐  │
-│  │ Filtre Auth JWT    │ Filtre Rate Limiter │ Filtre Journal/Log │  │
+│  │ Jeton Keycloak     │ Filtre Rate Limiter │ Filtre Journal/Log │  │
 │  │ (Validation Token) │ (Quota requêtes/IP) │ (Traçabilité HTTP) │  │
 │  └────────────────────┴─────────────────────┴────────────────────┘  │
 │        SecurityConfig · RouteConfig · GlobalExceptionHandler        │
@@ -230,12 +230,12 @@ materia/
 │   │   │
 │   │   ├── 📂 gateway/                  # Couche Passerelle d'API (Gateway)
 │   │   │   ├── config/                  # Configuration des routes, sécurité et CORS
-│   │   │   ├── filter/                  # Filtres JWT, Rate Limit et Journalisation
-│   │   │   ├── security/               # Fournisseur de jetons JWT et utilitaires
+│   │   │   ├── filter/                  # Filtres jeton, Rate Limit et Journalisation
+│   │   │   ├── security/               # Vérification des jetons Keycloak et utilitaires
 │   │   │   └── exception/              # Gestionnaire global des erreurs (RFC 7807)
 │   │   │
 │   │   ├── 📂 contexts/                 # Modules Métiers (DDD Bounded Contexts)
-│   │   │   ├── auth/                    # 🔐 Authentification & Autorisation
+│   │   │   ├── auth/                    # 🔐 Comptes (dans Keycloak) & annuaire
 │   │   │   │   ├── application/         #    Services applicatifs, DTOs, Mappers
 │   │   │   │   ├── domain/              #    Entité Utilisateur, Rôles, Ports, Exceptions
 │   │   │   │   └── infrastructure/      #    Contrôleurs REST, entités JPA, envoi SMTP
@@ -357,11 +357,12 @@ materia/
 | Technologie | Version | Rôle / Utilisation |
 |---|---|---|
 | **Java** | 21 (LTS) | Environnement d'exécution moderne |
-| **Spring Boot** | 3.2.5 | Framework applicatif d'entreprise |
+| **Spring Boot** | 3.5.16 | Framework applicatif d'entreprise |
 | **Spring Security** | 6.x | Gestion de la sécurité et contrôle d'accès RBAC |
 | **Spring Data JPA** | 3.x | Couche d'accès aux données relationnelles et ORM |
 | **Flyway** | 9.x | Gestion et versionnage des migrations SQL |
-| **JJWT** | 0.12.5 | Création, signature et validation des jetons JWT |
+| **Keycloak** | 26.7.5 | Connexion (OIDC), comptes, rôles et émission des jetons |
+| **Spring Security OAuth2 JOSE** | 6.x | Vérification des jetons Keycloak (JWK set du realm) |
 | **Spring Kafka** | 3.x | Messagerie asynchrone et flux d'événements |
 | **SpringDoc OpenAPI** | 2.5.0 | Documentation interactive de l'API REST (Swagger UI) |
 | **Lombok** | Dernière | Réduction du code verbeux (getters, constructeurs) |

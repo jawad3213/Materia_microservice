@@ -10,25 +10,24 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Login attempts are throttled per client, and the client cannot choose the address it is counted under. */
+/** API requests are throttled per client, and the client cannot choose the address it is counted under. */
 class RateLimitFilterTest {
 
-    private static final int AUTH_LIMIT = 3;
+    private static final int LIMIT = 3;
 
     private final RateLimitFilter filter = new RateLimitFilter(rateLimitConfig(), new RouteConfig());
 
     private static RateLimitConfig rateLimitConfig() {
         RateLimitConfig config = new RateLimitConfig();
         ReflectionTestUtils.setField(config, "enabled", true);
-        ReflectionTestUtils.setField(config, "maxRequestsPerMinute", 100);
-        ReflectionTestUtils.setField(config, "maxAuthRequestsPerMinute", AUTH_LIMIT);
+        ReflectionTestUtils.setField(config, "maxRequestsPerMinute", LIMIT);
         ReflectionTestUtils.setField(config, "windowSeconds", 60L);
         return config;
     }
 
-    /** A login attempt arriving through nginx, which appends the address it saw to X-Forwarded-For. */
-    private int login(String spoofedForwardedFor, String realAddress) throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/login");
+    /** An API request arriving through nginx, which appends the address it saw to X-Forwarded-For. */
+    private int call(String spoofedForwardedFor, String realAddress) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/purchase-orders");
         request.setRemoteAddr("172.18.0.5"); // nginx, inside the compose network
         request.addHeader("X-Forwarded-For",
                 spoofedForwardedFor == null ? realAddress : spoofedForwardedFor + ", " + realAddress);
@@ -38,31 +37,31 @@ class RateLimitFilterTest {
     }
 
     @Test
-    @DisplayName("rate limit: login attempts above the quota are refused with 429")
-    void loginAttemptsAboveTheQuotaAreRefused() throws Exception {
-        for (int i = 0; i < AUTH_LIMIT; i++) {
-            assertEquals(200, login(null, "203.0.113.7"));
+    @DisplayName("rate limit: requests above the quota are refused with 429")
+    void requestsAboveTheQuotaAreRefused() throws Exception {
+        for (int i = 0; i < LIMIT; i++) {
+            assertEquals(200, call(null, "203.0.113.7"));
         }
-        assertEquals(429, login(null, "203.0.113.7"));
+        assertEquals(429, call(null, "203.0.113.7"));
     }
 
     @Test
     @DisplayName("rate limit: a client cannot escape the quota by sending its own X-Forwarded-For")
     void spoofedForwardedForDoesNotResetTheQuota() throws Exception {
-        for (int i = 0; i < AUTH_LIMIT; i++) {
-            assertEquals(200, login("10.0.0." + i, "198.51.100.9"));
+        for (int i = 0; i < LIMIT; i++) {
+            assertEquals(200, call("10.0.0." + i, "198.51.100.9"));
         }
-        assertEquals(429, login("10.0.0.99", "198.51.100.9"));
+        assertEquals(429, call("10.0.0.99", "198.51.100.9"));
     }
 
     @Test
     @DisplayName("rate limit: each real client has its own quota")
     void clientsAreCountedSeparately() throws Exception {
-        for (int i = 0; i < AUTH_LIMIT; i++) {
-            login(null, "192.0.2.1");
+        for (int i = 0; i < LIMIT; i++) {
+            call(null, "192.0.2.1");
         }
-        assertEquals(429, login(null, "192.0.2.1"));
-        assertEquals(200, login(null, "192.0.2.2"));
+        assertEquals(429, call(null, "192.0.2.1"));
+        assertEquals(200, call(null, "192.0.2.2"));
     }
 
     @Test

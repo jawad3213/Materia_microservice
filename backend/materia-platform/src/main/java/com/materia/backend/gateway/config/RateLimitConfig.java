@@ -22,11 +22,6 @@ public class RateLimitConfig {
     @Value("${gateway.rate-limit.max-requests-per-minute:120}")
     private int maxRequestsPerMinute;
 
-    // Credential endpoints get a much tighter quota than ordinary API traffic:
-    // they are unauthenticated and are the target of password guessing.
-    @Value("${gateway.rate-limit.max-auth-requests-per-minute:10}")
-    private int maxAuthRequestsPerMinute;
-
     @Value("${gateway.rate-limit.window-seconds:60}")
     private long windowSeconds;
 
@@ -39,10 +34,6 @@ public class RateLimitConfig {
 
     public int getMaxRequestsPerMinute() {
         return maxRequestsPerMinute;
-    }
-
-    public int getMaxAuthRequestsPerMinute() {
-        return maxAuthRequestsPerMinute;
     }
 
     public long getWindowSeconds() {
@@ -60,8 +51,7 @@ public class RateLimitConfig {
     }
 
     /**
-     * Même compteur glissant, mais avec un quota explicite : permet d'appliquer
-     * une limite distincte (plus stricte) aux endpoints d'authentification.
+     * Même compteur glissant, avec un quota explicite.
      *
      * @param clientKey clé du compteur (l'appelant la préfixe par famille de routes)
      * @param limit     nombre maximum de requêtes autorisées dans la fenêtre

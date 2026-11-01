@@ -44,20 +44,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String uri = request.getRequestURI();
         String clientIp = ClientIp.from(request);
 
-        // Credential endpoints are unauthenticated, so skipping them (as every other
-        // public route does) would leave password guessing completely unthrottled.
-        // They get their own, much smaller bucket instead.
-        boolean isCredentialEndpoint = isCredentialEndpoint(uri);
-
-        if (!isCredentialEndpoint && routeConfig.isPublicRoute(uri)) {
+        // Public routes (the API docs, health) are not counted. Sign-in is Keycloak's: nginx limits its password
+        // checks per address, and Keycloak counts failures per account.
+        if (routeConfig.isPublicRoute(uri)) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        int limit = isCredentialEndpoint
-                ? rateLimitConfig.getMaxAuthRequestsPerMinute()
-                : rateLimitConfig.getMaxRequestsPerMinute();
-        String bucketKey = isCredentialEndpoint ? "auth:" + clientIp : clientIp;
+        int limit = rateLimitConfig.getMaxRequestsPerMinute();
+        String bucketKey = clientIp;
 
         response.setHeader("X-RateLimit-Limit", String.valueOf(limit));
 
@@ -77,16 +72,5 @@ public class RateLimitFilter extends OncePerRequestFilter {
         response.setHeader("X-RateLimit-Remaining",
                 String.valueOf(rateLimitConfig.getRemainingRequests(bucketKey, limit)));
         filterChain.doFilter(request, response);
-    }
-
-    /**
-     * Endpoints qui consomment ou délivrent des identifiants : cibles typiques
-     * du bourrage d'identifiants et de l'énumération de comptes.
-     */
-    private boolean isCredentialEndpoint(String uri) {
-        if (uri == null) return false;
-        return uri.equals("/api/v1/auth/login")
-                || uri.equals("/api/v1/auth/forgot-password")
-                || uri.equals("/api/v1/auth/reset-password");
     }
 }

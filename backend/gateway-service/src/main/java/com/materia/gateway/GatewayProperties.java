@@ -26,7 +26,7 @@ public record GatewayProperties(String procurementUri, String identityUri, Strin
         if (financeUri == null || financeUri.isBlank()) financeUri = procurementUri;
         if (analyticsUri == null || analyticsUri.isBlank()) analyticsUri = procurementUri;
         if (keycloak == null) keycloak = new Keycloak(null, null, null);
-        if (rateLimit == null) rateLimit = new RateLimit(true, 120, 10, 60);
+        if (rateLimit == null) rateLimit = new RateLimit(true, 120, 60);
     }
 
     /**
@@ -53,9 +53,8 @@ public record GatewayProperties(String procurementUri, String identityUri, Strin
     /**
      * @param enabled                     off in tests that are not about it
      * @param maxRequestsPerMinute        a client's budget for the API
-     * @param maxAuthRequestsPerMinute    a client's budget for sign-in and password reset, kept small against guessing
      * @param windowSeconds               length of the counting window
      */
-    public record RateLimit(boolean enabled, int maxRequestsPerMinute, int maxAuthRequestsPerMinute, int windowSeconds) {
+    public record RateLimit(boolean enabled, int maxRequestsPerMinute, int windowSeconds) {
     }
 }

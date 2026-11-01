@@ -15,12 +15,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -41,6 +41,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * backlog and the parked messages are metrics ({@code materia.outbox.pending}, {@code materia.outbox.parked}) the
  * alerts watch.
  *
+ * <p>One copy of a service relays at a time: each batch first takes a PostgreSQL advisory lock named after the service
+ * ({@code app.outbox.relay.lock-name}, its application name by default; every service shares the database, so the
+ * name keeps them apart). A second copy finds it taken and leaves the batch to the first, so events are neither
+ * published twice nor out of order when a service runs more than once.
+ *
  * <p>It runs on its own thread rather than through {@code @Scheduled}, so it does not depend on SchedulingConfig.
  */
 @Component
@@ -54,6 +59,8 @@ public class OutboxRelay implements SmartLifecycle {
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final TransactionTemplate transactions;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbc;
+    private final String lockName;
     private final long intervalMs;
     private final int batchSize;
     private final long sendTimeoutMs;
@@ -66,6 +73,8 @@ public class OutboxRelay implements SmartLifecycle {
                        TransactionTemplate transactions,
                        ObjectMapper objectMapper,
                        ObjectProvider<MeterRegistry> meters,
+                       JdbcTemplate jdbc,
+                       @Value("${app.outbox.relay.lock-name:${spring.application.name:materia}}") String lockName,
                        @Value("${app.outbox.relay.interval-ms:2000}") long intervalMs,
                        @Value("${app.outbox.relay.batch-size:100}") int batchSize,
                        @Value("${app.outbox.relay.send-timeout-ms:10000}") long sendTimeoutMs) {
@@ -73,6 +82,8 @@ public class OutboxRelay implements SmartLifecycle {
         this.kafkaTemplate = kafkaTemplate;
         this.transactions = transactions;
         this.objectMapper = objectMapper;
+        this.jdbc = jdbc;
+        this.lockName = "outbox-relay:" + lockName;
         this.intervalMs = intervalMs;
         this.batchSize = batchSize;
         this.sendTimeoutMs = sendTimeoutMs;
@@ -86,35 +97,45 @@ public class OutboxRelay implements SmartLifecycle {
         });
     }
 
-    /** Relays one batch; returns how many messages were published. Stops at the first failure to keep the order. */
+    /**
+     * Relays one batch, in one transaction holding this service's relay lock; returns how many messages were published
+     * (0 when another copy of the service holds the lock). Stops at the first broker failure to keep the order.
+     */
     public int relayBatch() {
-        List<OutboxMessageJpaEntity> batch = transactions.execute(status -> outbox.findPending(PageRequest.of(0, batchSize)));
-        int published = 0;
-        for (OutboxMessageJpaEntity message : batch != null ? batch : List.<OutboxMessageJpaEntity>of()) {
-            try {
-                kafkaTemplate.send(topicOf(message), message.getAggregateId(), envelope(message))
-                        .get(sendTimeoutMs, TimeUnit.MILLISECONDS);
-                message.markPublished();
-                transactions.executeWithoutResult(status -> outbox.save(message));
-                published++;
-            } catch (Exception e) {
-                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                if (isPermanent(e)) {
-                    log.error("Outbox relay parked {} {}: it can never be published as it is ({}). Later events go on; "
-                                    + "set its parked_at back to null once fixed to publish it.",
-                            message.getEventType(), message.getEventId(), rootCause(e).toString());
-                    message.markParked(rootCause(e).toString());
-                    transactions.executeWithoutResult(status -> outbox.save(message));
-                    continue;
-                }
-                log.warn("Outbox relay could not publish {} {}: {}", message.getEventType(), message.getEventId(), e.toString());
-                message.markFailed(e.toString());
-                transactions.executeWithoutResult(status -> outbox.save(message));
-                break;
+        Integer published = transactions.execute(status -> {
+            if (!Boolean.TRUE.equals(jdbc.queryForObject("select pg_try_advisory_xact_lock(hashtext(?))", Boolean.class,
+                    lockName))) {
+                return 0;
             }
-        }
+            int sent = 0;
+            for (OutboxMessageJpaEntity message : outbox.findPending(PageRequest.of(0, batchSize))) {
+                try {
+                    kafkaTemplate.send(topicOf(message), message.getAggregateId(), envelope(message))
+                            .get(sendTimeoutMs, TimeUnit.MILLISECONDS);
+                    message.markPublished();
+                    outbox.save(message);
+                    sent++;
+                } catch (Exception e) {
+                    if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                    if (isPermanent(e)) {
+                        log.error("Outbox relay parked {} {}: it can never be published as it is ({}). Later events go "
+                                        + "on; set its parked_at back to null once fixed to publish it.",
+                                message.getEventType(), message.getEventId(), rootCause(e).toString());
+                        message.markParked(rootCause(e).toString());
+                        outbox.save(message);
+                        continue;
+                    }
+                    log.warn("Outbox relay could not publish {} {}: {}", message.getEventType(), message.getEventId(),
+                            e.toString());
+                    message.markFailed(e.toString());
+                    outbox.save(message);
+                    break;
+                }
+            }
+            return sent;
+        });
         refreshCounts();
-        return published;
+        return published == null ? 0 : published;
     }
 
     /**

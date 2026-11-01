@@ -42,8 +42,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "management.server.port=0",
-        "gateway.rate-limit.max-auth-requests-per-minute=3"})
+        "gateway.rate-limit.max-requests-per-minute=" + GatewayTest.API_BUDGET})
 class GatewayTest {
+
+    /** Each client's budget: small, so the throttling test reaches it; the other tests stay well under. */
+    static final int API_BUDGET = 60;
 
     private static final KeyPair KEYCLOAK_KEYS = rsa();
     private static final KeyPair OTHER_KEYS = rsa();
@@ -201,10 +204,10 @@ class GatewayTest {
     @Test
     @DisplayName("gateway: a request without a token reaches the service, which decides whether the path needs one")
     void noToken_isRouted() {
-        client.post().uri("/api/v1/auth/refresh").exchange().expectStatus().isOk();
+        client.get().uri("/api/v1/employees").exchange().expectStatus().isOk();
 
         assertThat(RECEIVED).extracting(r -> r.get("path") + " -> " + r.get("service"))
-                .containsExactly("/api/v1/auth/refresh -> identity");
+                .containsExactly("/api/v1/employees -> identity");
     }
 
     @Test
@@ -355,20 +358,24 @@ class GatewayTest {
     }
 
     @Test
-    @DisplayName("gateway: sign-in is throttled per client address (429), and another address is not")
-    void signIn_isThrottledPerClient() {
-        for (int i = 0; i < 3; i++) {
-            client.post().uri("/api/v1/auth/login").header("X-Real-IP", "203.0.113.7")
+    @DisplayName("gateway: the API is throttled per client address (429), and another address is not")
+    void api_isThrottledPerClient() {
+        String token = validToken();
+        for (int i = 0; i < API_BUDGET; i++) {
+            client.get().uri("/api/v1/purchase-orders").header("X-Real-IP", "203.0.113.7")
+                    .header("Authorization", "Bearer " + token)
                     .exchange().expectStatus().isOk();
         }
-        client.post().uri("/api/v1/auth/login").header("X-Real-IP", "203.0.113.7")
+        client.get().uri("/api/v1/purchase-orders").header("X-Real-IP", "203.0.113.7")
+                .header("Authorization", "Bearer " + token)
                 .exchange()
                 .expectStatus().isEqualTo(429)
                 .expectHeader().exists("Retry-After");
-        client.post().uri("/api/v1/auth/login").header("X-Real-IP", "198.51.100.9")
+        client.get().uri("/api/v1/purchase-orders").header("X-Real-IP", "198.51.100.9")
+                .header("Authorization", "Bearer " + token)
                 .exchange().expectStatus().isOk();
 
-        assertThat(RECEIVED).hasSize(4);
+        assertThat(RECEIVED).hasSize(API_BUDGET + 1);
         assertThat(RECEIVED.get(0).get("realIp")).isEqualTo("203.0.113.7");
     }
 

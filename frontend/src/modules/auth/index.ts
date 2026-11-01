@@ -11,7 +11,6 @@ export { default as useAuth } from './hooks/useAuth';
 // Pages
 export { default as LoginPage } from './pages/LoginPage';
 export { default as ForgotPasswordPage } from './pages/ForgotPasswordPage';
-export { default as ResetPasswordPage } from './pages/ResetPasswordPage';
 
 // Routes
 export { default as AuthRoutes } from './AuthRoutes';
