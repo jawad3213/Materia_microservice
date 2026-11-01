@@ -1,10 +1,12 @@
 package com.materia.backend.infrastructure.storage;
 
+import com.materia.backend.support.DockerRequiredInCi;
 import com.materia.backend.common.attachment.domain.exceptions.AttachmentStorageException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
@@ -26,6 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Attachment files in an S3 bucket (Adobe S3Mock here, an S3-compatible server), each service under its own prefix. */
+// Skipped locally without Docker, like the other container tests; never skipped in CI
+@ExtendWith(DockerRequiredInCi.class)
 @Testcontainers
 class S3AttachmentStorageIT {
 
