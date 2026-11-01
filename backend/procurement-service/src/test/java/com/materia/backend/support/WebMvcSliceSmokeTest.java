@@ -17,7 +17,6 @@ import java.util.UUID;
 import static com.materia.backend.support.ErrorResponseAssertions.assertError;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -63,9 +62,9 @@ class WebMvcSliceSmokeTest extends AbstractWebMvcTest {
     @Test
     @DisplayName("slice: a public endpoint is not blocked by authentication")
     void publicEndpoint_unauthenticated_isNotBlockedBySecurity() throws Exception {
-        // No auth controller is loaded in this slice, so the request finds no handler.
+        // The API docs are public, and off in the test slice, so the request finds no handler.
         // 404 proves security let it through; a 401 would mean the public list is not applied.
-        mockMvc.perform(post("/api/v1/auth/login"))
+        mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isNotFound());
     }
 }

@@ -28,11 +28,12 @@ class PublicEndpointsConfigTest {
     }
 
     @Test
-    @DisplayName("security: by default only the sign-in flow, API docs and health checks are reachable without a session")
-    void defaultPublicEndpoints_areTheSignInFlowOnly() throws Exception {
+    @DisplayName("security: by default only the API docs and health checks are reachable without a token")
+    void defaultPublicEndpoints_areDocsAndHealthOnly() throws Exception {
         List<String> open = defaultPublicEndpoints();
 
-        assertTrue(open.contains("/api/v1/auth/login"));
+        // Sign-in is Keycloak's: no route of the old one stays open
+        assertFalse(open.stream().anyMatch(p -> p.startsWith("/api/v1/auth")), "no sign-in route is served here any more");
         assertTrue(open.contains("/actuator/health/**"), "the deployment health check must stay reachable");
         for (String closed : List.of("/api/v1/auth/**", "/api/v1/masterdata/**", "/api/v1/kafka/**", "/actuator/**")) {
             assertFalse(open.contains(closed), closed + " must require a session");

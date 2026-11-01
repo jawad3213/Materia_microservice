@@ -14,7 +14,6 @@ import ProfilePage from '../../modules/userProfile/pages/ProfilePage';
 import AuthRoutes from '../../modules/auth/AuthRoutes';
 import LoginPage from '../../modules/auth/pages/LoginPage';
 import ForgotPasswordPage from '../../modules/auth/pages/ForgotPasswordPage';
-import ResetPasswordPage from '../../modules/auth/pages/ResetPasswordPage';
 import NotFoundPage from '../../shared/pages/NotFoundPage';
 import AppLayout from '../../shared/layout/AppLayout';
 import PublicLayout from '../../modules/landing/layout/PublicLayout';
@@ -67,14 +66,6 @@ export default function AppRoutes() {
         element={
           <PublicRoute>
             <ForgotPasswordPage />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/reset-password"
-        element={
-          <PublicRoute>
-            <ResetPasswordPage />
           </PublicRoute>
         }
       />

@@ -11,13 +11,12 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.net.InetSocketAddress;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * A per-client budget of requests per window: 120 a minute for the API, 10 for the credential endpoints, whose
- * guessing would otherwise go unthrottled. Same rules as procurement's limiter, which stays as a second line.
+ * A per-client budget of requests per window: 120 a minute for the API. Same rules as procurement's limiter, which
+ * stays as a second line. Password guessing is Keycloak's to stop: nginx limits its sign-in endpoints per address.
  *
  * <p>The client is the address nginx saw ({@code X-Real-IP}, which it overwrites), else the last
  * {@code X-Forwarded-For} hop, written by the nearest proxy, else the connection's address. The first
@@ -25,9 +24,6 @@ import java.util.concurrent.ConcurrentMap;
  */
 @Component
 public class RateLimitFilter implements GlobalFilter, Ordered {
-
-    private static final Set<String> CREDENTIAL_ENDPOINTS = Set.of(
-            "/api/v1/auth/login", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password");
 
     private final GatewayProperties.RateLimit limits;
     private final ConcurrentMap<String, Window> windows = new ConcurrentHashMap<>();
@@ -40,11 +36,10 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         if (!limits.enabled()) return chain.filter(exchange);
         String path = exchange.getRequest().getPath().value();
-        boolean credentials = CREDENTIAL_ENDPOINTS.contains(path);
-        if (!credentials && isPublic(path)) return chain.filter(exchange);
+        if (isPublic(path)) return chain.filter(exchange);
 
-        int limit = credentials ? limits.maxAuthRequestsPerMinute() : limits.maxRequestsPerMinute();
-        String key = (credentials ? "auth:" : "api:") + clientOf(exchange.getRequest());
+        int limit = limits.maxRequestsPerMinute();
+        String key = "api:" + clientOf(exchange.getRequest());
         int used = consume(key);
         exchange.getResponse().getHeaders().set("X-RateLimit-Limit", String.valueOf(limit));
         exchange.getResponse().getHeaders().set("X-RateLimit-Remaining", String.valueOf(Math.max(0, limit - used)));
@@ -56,9 +51,9 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         return chain.filter(exchange);
     }
 
-    /** The other sign-in routes and the API docs: not counted, like in procurement. */
+    /** The API docs: not counted, like in procurement. Sign-in is Keycloak's, limited by nginx in front of it. */
     private static boolean isPublic(String path) {
-        return path.startsWith("/api/v1/auth/") || path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs");
+        return path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs");
     }
 
     static String clientOf(ServerHttpRequest request) {
