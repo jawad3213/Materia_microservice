@@ -12,6 +12,12 @@ import java.util.UUID;
 public interface UserRepository {
     
     User save(User user);
+
+    /**
+     * Saves and writes to the database at once, so a broken constraint (an e-mail taken meanwhile) fails here, while
+     * the caller can still undo what it did elsewhere, rather than at the commit.
+     */
+    User saveNow(User user);
     Optional<User> findById(UUID id);
     Optional<User> findByEmail(Email email);
     Optional<User> findByEmail(String email);

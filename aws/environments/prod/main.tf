@@ -55,13 +55,15 @@ locals {
     APP_LOGIN_URL                           = "${local.app_url}/login"
     # Keycloak (docs/architecture/keycloak-migration.md), served under /auth by the frontend's nginx. The issuer is
     # what tokens state and the services expect; the rest fills the realm's placeholders at its first import.
-    KEYCLOAK_ISSUER_URI        = "${local.app_url}/auth/realms/materia"
-    MATERIA_APP_URL            = local.app_url
-    MATERIA_DEV_APP_URL        = local.app_url
-    KEYCLOAK_SSL_REQUIRED      = startswith(local.app_url, "https://") ? "external" : "none"
-    KEYCLOAK_PKCE_METHOD       = "S256"
-    JAVA_TOOL_OPTIONS          = "-XX:MaxRAMPercentage=60"
-    GATEWAY_RATE_LIMIT_MAX_RPM = tostring(var.api_rate_limit_per_minute)
+    KEYCLOAK_ISSUER_URI   = "${local.app_url}/auth/realms/materia"
+    MATERIA_APP_URL       = local.app_url
+    MATERIA_DEV_APP_URL   = local.app_url
+    KEYCLOAK_SSL_REQUIRED = startswith(local.app_url, "https://") ? "external" : "none"
+    KEYCLOAK_PKCE_METHOD  = "S256"
+    # The password-grant client of the CD's tests (tests/): only where they run against this environment
+    KEYCLOAK_TEST_CLIENT_ENABLED = tostring(var.keycloak_test_client_enabled)
+    JAVA_TOOL_OPTIONS            = "-XX:MaxRAMPercentage=60"
+    GATEWAY_RATE_LIMIT_MAX_RPM   = tostring(var.api_rate_limit_per_minute)
   }
 }
 

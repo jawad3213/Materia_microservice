@@ -48,7 +48,7 @@ class AccountProvisioningServiceTest {
     private void stubSuccessfulSave() {
         when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
         when(identityProvider.createAccount(any(User.class), anyString(), anyBoolean())).thenReturn(testUserId);
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.saveNow(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -59,7 +59,7 @@ class AccountProvisioningServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.provisionAccount("john@example.com", "John", "Doe", "ADMNI", "Str0ng!Pass"));
 
-        verify(userRepository, never()).save(any(User.class));
+        verify(userRepository, never()).saveNow(any(User.class));
         verifyNoInteractions(emailSender, identityProvider);
     }
 
@@ -72,7 +72,7 @@ class AccountProvisioningServiceTest {
 
         assertEquals(testUserId, userId);
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(captor.capture());
+        verify(userRepository).saveNow(captor.capture());
         assertEquals(Role.ADMIN, captor.getValue().getRole());
         assertEquals(UserStatus.ACTIVE, captor.getValue().getStatus());
         // The directory entry takes the id of the account the identity provider created
@@ -84,7 +84,7 @@ class AccountProvisioningServiceTest {
     void shouldDeleteTheAccountWhenTheDirectoryEntryFails() {
         when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
         when(identityProvider.createAccount(any(User.class), anyString(), anyBoolean())).thenReturn(testUserId);
-        when(userRepository.save(any(User.class))).thenThrow(new IllegalStateException("database down"));
+        when(userRepository.saveNow(any(User.class))).thenThrow(new IllegalStateException("database down"));
 
         assertThrows(IllegalStateException.class,
                 () -> service.provisionAccount("john@example.com", "John", "Doe", "PURCHASER", "Str0ng!Pass"));
@@ -101,7 +101,7 @@ class AccountProvisioningServiceTest {
         service.provisionAccount("john@example.com", "John", "Doe", "  ", "Str0ng!Pass");
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(captor.capture());
+        verify(userRepository).saveNow(captor.capture());
         assertEquals(Role.PURCHASER, captor.getValue().getRole());
     }
 
@@ -113,7 +113,7 @@ class AccountProvisioningServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.provisionAccount("john@example.com", "John", "Doe", "PURCHASER", "abc"));
 
-        verify(userRepository, never()).save(any(User.class));
+        verify(userRepository, never()).saveNow(any(User.class));
         verifyNoInteractions(emailSender);
     }
 

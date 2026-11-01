@@ -28,6 +28,8 @@ github_environment       = "staging"
 # Application
 spring_profile        = "staging"
 app_url               = "" # empty = http://<elastic ip>; Keycloak's sign-in needs https:// (see aws/README.md, HTTPS)
+# The CD's tests sign in through the realm's materia-test-runner client (password grant)
+keycloak_test_client_enabled = true
 
 # The CD performance test sends a few thousand requests a minute from one GitHub runner: raise the per-client
 # quota here (prod keeps the default of 120).

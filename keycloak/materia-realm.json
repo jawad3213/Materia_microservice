@@ -429,8 +429,8 @@
     {
       "clientId": "materia-test-runner",
       "name": "Materia CD tests",
-      "description": "Password grant for the CD smoke, load and security tests (tests/): a user's token without a browser. Confidential; grants no role of its own.",
-      "enabled": true,
+      "description": "Password grant for the CD smoke, load and security tests (tests/): a user's token without a browser. Confidential; grants no role of its own. Enabled where KEYCLOAK_TEST_CLIENT_ENABLED is true (local, staging), off in production.",
+      "enabled": "${KEYCLOAK_TEST_CLIENT_ENABLED}",
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
       "secret": "${KEYCLOAK_TEST_CLIENT_SECRET}",

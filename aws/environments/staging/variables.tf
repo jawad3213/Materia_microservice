@@ -137,6 +137,12 @@ variable "app_url" {
   default     = ""
 }
 
+variable "keycloak_test_client_enabled" {
+  description = "Enable the realm's materia-test-runner client (password grant), which the CD's smoke, load and security tests sign in with. Read at Keycloak's first start only; afterwards toggle it in its admin console."
+  type        = bool
+  default     = false
+}
+
 variable "contact_email" {
   description = "Contact e-mail shown in the API documentation."
   type        = string

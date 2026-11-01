@@ -32,6 +32,8 @@ promote_from_environment = "staging"
 # Application
 spring_profile        = "prod"
 app_url               = "" # e.g. "https://app.example.com": Keycloak's sign-in needs HTTPS (see aws/README.md)
+# true only to run the smoke test's signed-in checks here (password grant client materia-test-runner)
+keycloak_test_client_enabled = false
 contact_email         = "support@example.com"
 bootstrap_admin_email = "admin@example.com" # first administrator; read its password with the bootstrap_admin_password_command output
 

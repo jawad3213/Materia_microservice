@@ -32,9 +32,11 @@ RUN /opt/keycloak/bin/kc.sh build
 FROM quay.io/keycloak/keycloak:26.7.5
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 COPY materia-realm.json /opt/keycloak/data/import/materia-realm.json
+# Refuses to start when a value the realm needs is missing (a client secret would stay its placeholder text)
+COPY --chmod=755 materia-entrypoint.sh /opt/keycloak/bin/materia-entrypoint.sh
 
 # 8080: sign-in pages, tokens, admin console (/auth); 9000: health (/auth/health/ready) and metrics
 EXPOSE 8080 9000
 
-ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
+ENTRYPOINT ["/opt/keycloak/bin/materia-entrypoint.sh"]
 CMD ["start", "--optimized", "--import-realm"]

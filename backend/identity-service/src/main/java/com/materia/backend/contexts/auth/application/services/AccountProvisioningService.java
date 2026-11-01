@@ -73,7 +73,8 @@ public class AccountProvisioningService implements AccountProvisioningUseCase {
         user.setId(id);
         User savedUser;
         try {
-            savedUser = userRepository.save(user);
+            // Written at once: a failure after this method (at the commit) could no longer undo the account
+            savedUser = userRepository.saveNow(user);
         } catch (RuntimeException e) {
             identityProvider.deleteAccount(id);
             throw e;
