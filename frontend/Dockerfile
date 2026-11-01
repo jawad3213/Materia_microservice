@@ -5,7 +5,7 @@
 # -------------------------------------------------------------------
 # Stage 1: Build Application
 # -------------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Build arguments for Vite environment variables
@@ -28,7 +28,7 @@ RUN npx vite build
 # -------------------------------------------------------------------
 # Stage 2: Serve with Nginx
 # -------------------------------------------------------------------
-FROM nginx:1.29-alpine
+FROM nginx:1.30-alpine
 
 # Apply the operating system's security fixes released since the base image was published.
 RUN apk upgrade --no-cache
