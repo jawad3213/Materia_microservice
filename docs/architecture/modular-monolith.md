@@ -65,7 +65,7 @@ database server of its own is a dump of its schema.
 
 | Schema | Tables |
 |---|---|
-| `identity` | users, employees (refresh_tokens and password_reset_tokens are unused since Keycloak: dropped later) |
+| `identity` | users, employees (accounts and sign-in are in Keycloak) |
 | `keycloak` | Keycloak's own tables (realm, accounts, credentials, sessions) |
 | `masterdata` | categories, materials, suppliers, supplier_payment_terms, material_stock_movements |
 | `procurement` | purchase_requisitions(+lines), purchase_orders(+lines), goods_receipts(+lines), return_to_vendor(+lines) |

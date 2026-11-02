@@ -95,10 +95,8 @@ password hashes once Keycloak has them, so an older identity could no longer sig
 
 ## Later
 
-- Drop `refresh_tokens`, `password_reset_tokens`, `users.password_hash` and `users.must_change_password` once every
-  environment has imported its accounts.
-- Procurement still carries settings of the old sign-in (`app.auth.refresh-cookie.*`, `app.mail.reset-password-*`,
-  the sign-in paths in `app.security.public-endpoints`); they are unused.
+- `refresh_tokens` and `password_reset_tokens` are dropped (identity V5). Drop `users.password_hash` and
+  `users.must_change_password` once every environment has imported its accounts.
 - Roles have two copies: Keycloak's (what tokens carry) and `identity.users.role` (the directory). A role changed in
   Keycloak's admin console is not reflected in identity; change roles through identity only, until they are synced.
 - A new account's temporary password is e-mailed by identity. Keycloak can send a link to choose one instead
