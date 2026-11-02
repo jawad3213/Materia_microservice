@@ -224,128 +224,54 @@ Chaque Bounded Context respecte rigoureusement l'organisation interne suivante :
 ```
 materia/
 │
-├── 📂 backend/                          # Application Spring Boot (Java 21)
-│   ├── src/main/java/com/materia/backend/
-│   │   ├── ProcurementServiceApplication.java # Point d'entrée (procurement-service)
-│   │   │
-│   │   ├── 📂 gateway/                  # Couche Passerelle d'API (Gateway)
-│   │   │   ├── config/                  # Configuration des routes, sécurité et CORS
-│   │   │   ├── filter/                  # Filtres jeton, Rate Limit et Journalisation
-│   │   │   ├── security/               # Vérification des jetons Keycloak et utilitaires
-│   │   │   └── exception/              # Gestionnaire global des erreurs (RFC 7807)
-│   │   │
-│   │   ├── 📂 contexts/                 # Modules Métiers (DDD Bounded Contexts)
-│   │   │   ├── auth/                    # 🔐 Comptes (dans Keycloak) & annuaire
-│   │   │   │   ├── application/         #    Services applicatifs, DTOs, Mappers
-│   │   │   │   ├── domain/              #    Entité Utilisateur, Rôles, Ports, Exceptions
-│   │   │   │   └── infrastructure/      #    Contrôleurs REST, entités JPA, envoi SMTP
-│   │   │   │
-│   │   │   ├── employee/                # 👥 Gestion des Collaborateurs
-│   │   │   │   ├── application/
-│   │   │   │   ├── domain/
-│   │   │   │   └── infrastructure/
-│   │   │   │
-│   │   │   ├── masterData/              # 🏭 Catalogue Articles, Catégories, Fournisseurs
-│   │   │   │   ├── application/
-│   │   │   │   ├── domain/
-│   │   │   │   └── infrastructure/
-│   │   │   │
-│   │   │   ├── purchaseRequisition/     # 📋 Demandes d'Achat & Workflow de Validation
-│   │   │   │   ├── application/
-│   │   │   │   ├── domain/              #    Entités, Objets-Valeurs, Matrice d'état
-│   │   │   │   └── infrastructure/
-│   │   │   │
-│   │   │   ├── purchaseOrder/           # 📦 Bons de Commande Fournisseurs
-│   │   │   ├── goodsReceipt/            # 📥 Réceptions & Contrôles Magasin
-│   │   │   ├── invoice/                 # 🧾 Facturation Fournisseurs & Rapprochement
-│   │   │   ├── payement/                # 💳 Règlements & Gestion des Flux
-│   │   │   ├── returnToVendor/          # ↩️  Retours Marchandises & Litiges
-│   │   │   ├── analytics-service/       # 📊 Statistiques & Tableaux de Bord (planifié)
-│   │   │   └── notification-service/    # 🔔 Alertes & Notifications (planifié)
-│   │   │
-│   │   ├── 📂 common/                   # Utilitaires transversaux et classes de base
-│   │   ├── 📂 environment/              # Détection et configuration des profils
-│   │   └── 📂 infrastructure/           # Configuration d'infrastructure partagée
-│   │
-│   ├── src/main/resources/
-│   │   ├── application.properties       # Base de configuration partagée
-│   │   ├── application-prod.properties  # Paramètres spécifiques à la production
-│   │   └── db/migration/               # Scripts de migration Flyway (9 scripts versionnés)
-│   │
-│   ├── src/test/java/                   # Suite de tests automatisés
-│   │   ├── contexts/auth/              # Tests unitaires et d'intégration Auth
-│   │   ├── contexts/purchaseRequisition/ # Tests d'intégration du workflow d'approbation
-│   │   ├── contexts/masterData/        # Tests du catalogue et des stocks
-│   │   ├── contexts/employee/          # Tests de la gestion des employés
-│   │   └── support/                    # Fixtures de test, assertions et conteneurs
-│   │
-│   ├── Dockerfile                       # Build multi-étapes pour Java 21
-│   └── pom.xml                          # Dépendances Maven et plugins
+├── 📂 backend/                          # Microservices Spring Boot (Java 21), un module Maven chacun
+│   ├── gateway-service/                 # Passerelle (Spring Cloud Gateway) : routes, jetons Keycloak, quotas, CORS
+│   ├── identity-service/                # Comptes (créés dans Keycloak), employés ; REST 8082, gRPC 9091
+│   ├── procurement-service/             # Demandes d'achat, commandes, réceptions, retours ; REST 8080, gRPC 9090
+│   ├── masterdata-service/              # Articles, catégories, fournisseurs, stock ; REST 8083, gRPC 9092
+│   ├── finance-service/                 # Factures, paiements, paramètres ; REST 8084, gRPC 9093
+│   ├── analytics-service/               # Tableau de bord composé des chiffres des autres services ; REST 8085
+│   │   └── src/main/java/com/materia/backend/contexts/<contexte>/
+│   │       ├── application/             #    Services applicatifs, DTOs, mappers
+│   │       ├── domain/                  #    Entités, objets-valeurs, ports, règles
+│   │       └── infrastructure/          #    Contrôleurs REST/gRPC, JPA, Kafka, clients
+│   ├── materia-platform/                # Sécurité (vérification des jetons), filtres, erreurs RFC 7807, gRPC, outbox
+│   ├── materia-common/                  # Classes partagées : domaine de base, devises, pièces jointes, audit, seed de démo
+│   ├── materia-grpc/                    # Contrats .proto entre services
+│   ├── materia-test-support/            # Conteneurs de test (Postgres, Kafka) et fixtures
+│   ├── config/checkstyle/               # Règles de style Java
+│   └── pom.xml                          # POM parent (versions, modules)
 │
 ├── 📂 frontend/                         # Application Web React 19 (Vite + TypeScript)
 │   ├── src/
-│   │   ├── app/                         # Enveloppe applicative et routage
-│   │   │   └── routes/AppRoutes.tsx     # Définition centralisée des routes
-│   │   │
-│   │   ├── 📂 modules/                  # Modules fonctionnels calqués sur le domaine
-│   │   │   ├── auth/                    # Connexion, mot de passe oublié, réinitialisation
-│   │   │   ├── dashboard/              # Tableau de bord principal
-│   │   │   ├── requisitions/           # Gestion et création des demandes d'achat
-│   │   │   ├── materials/              # Gestion des articles et suivi des stocks
-│   │   │   ├── suppliers/              # Répertoire et contacts des fournisseurs
-│   │   │   ├── categories/             # Gestion de l'arbre des catégories
-│   │   │   ├── purchaseOrders/         # Suivi des bons de commande
-│   │   │   ├── goodsReceipts/          # Suivi des réceptions entrepôt
-│   │   │   ├── invoices/               # Consultation des factures
-│   │   │   ├── payments/               # Suivi des paiements
-│   │   │   ├── returnToVendor/         # Traitement des retours
-│   │   │   ├── users/                  # Administration des comptes utilisateurs
-│   │   │   ├── userProfile/            # Profil individuel utilisateur
-│   │   │   └── admin/                  # Panneau d'administration global
-│   │   │
-│   │   └── 📂 shared/                   # Composants et utilitaires transversaux
-│   │       ├── api/                     # Client Axios avec intercepteurs de jetons
-│   │       ├── components/              # En-tête, Barre latérale, primitives d'interface
-│   │       ├── context/                 # Contextes React (authentification, thèmes)
-│   │       ├── hooks/                   # Hooks React réutilisables
-│   │       ├── layout/                  # Gabarit structurel AppLayout
-│   │       ├── icons/                   # Composants d'icônes SVG optimisés
-│   │       ├── types/                   # Définitions TypeScript globales
-│   │       └── utils/                   # Fonctions d'aide et formateurs
-│   │
-│   ├── Dockerfile                       # Build de production et serveur Nginx
-│   ├── nginx.conf                       # Configuration du serveur web inverse (Reverse Proxy)
-│   └── package.json                     # Dépendances frontend et scripts
+│   │   ├── app/routes/                  # Routage, routes privées et gardes de rôle
+│   │   ├── 📂 modules/                  # Un module par domaine fonctionnel
+│   │   │   ├── auth/                    # Connexion Keycloak (keycloak-js), session, permissions
+│   │   │   ├── landing/                 # Pages publiques
+│   │   │   ├── dashboard/               # Tableau de bord
+│   │   │   ├── requisitions/ purchaseOrders/ goodsReceipts/ returnToVendor/
+│   │   │   ├── materials/ categories/ suppliers/
+│   │   │   ├── invoices/ payments/ settings/
+│   │   │   ├── users/ userProfile/ audit/ attachments/
+│   │   └── 📂 shared/                   # Client API, composants, layout, hooks, icônes, types, utils
+│   ├── public/silent-check-sso.html     # Vérification silencieuse de la session Keycloak
+│   ├── nginx.conf                       # Sert l'application, proxy /api (passerelle) et /auth (Keycloak)
+│   └── Dockerfile
 │
+├── 📂 keycloak/                         # Image Keycloak : realm materia, entrypoint, provider BCrypt
 ├── 📂 aws/                              # Infrastructure as Code (Terraform)
-│   ├── modules/
-│   │   ├── vpc/                         # Réseau virtuel privé sécurisé
-│   │   ├── networking/                  # Sous-réseaux, tables de routage, passerelles NAT
-│   │   ├── security/                    # Groupes de sécurité et listes d'accès (NACL)
-│   │   ├── load_balancer/               # Équilibreur de charge applicatif (ALB)
-│   │   ├── ecr/                         # Registre d'images de conteneurs AWS ECR
-│   │   ├── ecs_fargate/                 # Définition des tâches et services Fargate
-│   │   ├── database/                    # Base de données managée AWS RDS PostgreSQL
-│   │   ├── frontend_s3_cloudfront/      # Hébergement S3 et réseau CDN CloudFront
-│   │   ├── iam_github_actions/          # Rôles IAM et authentification OIDC
-│   │   └── secrets/                     # Gestionnaire de secrets AWS Secrets Manager
-│   └── environments/                    # Variables spécifiques par environnement
+│   ├── bootstrap/                       # État Terraform (S3) et fournisseur OIDC GitHub
+│   ├── modules/                         # network, security, ec2, ecr, instance_iam, ssm_parameters, github_deploy_role
+│   ├── environments/                    # staging, prod, fargate-test
+│   └── deploy/                          # Stack Docker Compose de l'EC2, script de déploiement, monitoring
 │
-├── 📂 .github/                          # Intégration et Déploiement Continus (CI/CD)
-│   ├── WORKFLOWS.md                     # Documentation détaillée des pipelines CI/CD
-│   └── workflows/
-│       ├── ci.yml                       # CI : lint, tests, SonarQube, scans, images -> ECR
-│       ├── cd-staging.yml               # CD Staging : déploiement, tests de performance et de sécurité, approbation
-│       ├── cd-production.yml            # CD Production : même image, smoke test, monitoring, rollback
-│       └── deploy-ec2.yml               # Déploiement sur EC2 via SSM (appelé par les deux CD)
+├── 📂 .github/                          # CI/CD (voir WORKFLOWS.md)
+│   └── workflows/                       # ci.yml, cd-staging.yml, cd-production.yml, deploy-ec2.yml
+├── 📂 tests/                            # Smoke, sécurité (auth, ZAP) et charge (k6)
+├── 📂 docs/architecture/                # Frontières des services, migration Keycloak
 │
-├── 📂 scripts/                           # Scripts d'automatisation DevOps et outillage
-│
-├── docker-compose.yml                   # Services de base (Postgres, Kafka, Backend, Frontend)
-├── docker-compose.dev.yml               # Surcharges pour le développement (ports exposés)
-├── docker-compose.staging.yml           # Surcharges pour l'environnement de recette
-├── docker-compose.prod.yml              # Surcharges pour la production (limites mémoires/CPU)
-│
+├── docker-compose.yml                   # Stack complète en local : Postgres, Kafka, Keycloak, services, frontend
+├── docker-compose.dev.yml               # Surcharges de développement (ports exposés, Kafka UI)
 └── .env.example                         # Modèle de variables d'environnement
 ```
 
@@ -433,7 +359,7 @@ cd backend
 # Procurement (REST 8080, gRPC 9090) : demandes d'achat, commandes, réceptions, retours ; ses migrations créent
 # les schémas des services
 ./mvnw -pl procurement-service -am spring-boot:run
-# Identity (REST 8082, gRPC 9091) : connexion, comptes, employés ; seul signataire des jetons
+# Identity (REST 8082, gRPC 9091) : comptes (créés dans Keycloak), employés
 ./mvnw -pl identity-service -am spring-boot:run
 # Master data (REST 8083, gRPC 9092) : articles, catégories, fournisseurs, stock (reçoit les événements via Kafka)
 ./mvnw -pl masterdata-service -am spring-boot:run
@@ -458,10 +384,10 @@ npm run dev
 
 ---
 
-### Déploiement en Mode Production :
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
+### Déploiement (staging et production)
+Le déploiement passe par GitHub Actions : la CI construit les images et les pousse dans ECR, puis `deploy-ec2.yml`
+lance sur l'EC2 la stack de [`aws/deploy/docker-compose.yml`](aws/deploy/docker-compose.yml) (voir
+[`.github/WORKFLOWS.md`](.github/WORKFLOWS.md) et [`aws/README.md`](aws/README.md)).
 
 ---
 
